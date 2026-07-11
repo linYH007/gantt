@@ -130,6 +130,9 @@
   .lane{position:relative; height:42px;}
   .lane.task-lane{height:34px;}
   .shade{position:absolute; top:0; bottom:0; background:#f2f5f9; pointer-events:none;}
+  .shade.night{background:#e8edf3;
+    background-image:repeating-linear-gradient(45deg, transparent, transparent 4px, #dde4ec 4px, #dde4ec 6px);}
+  .shade.meal{background:#ffe9d2; border-left:1px dashed #f0b477; border-right:1px dashed #f0b477;}
   .shade.dayoff-weekend{background:#fbf3e2;}
   .shade.dayoff-holiday{background:#fdecec;}
   .day-badge{font-size:10px; margin-left:5px; padding:1px 7px; border-radius:8px; font-weight:600; vertical-align:1px;}
@@ -342,6 +345,8 @@ let didAutoScroll = false;         // 只在首次加载时自动定位到"现�
 let savedScrollLeft = 0, savedScrollTop = 0;  // 记住看板滚动位置，刷新不跳
 let filterMode = 'all';            // 快速筛选：all/today/running/open
 let searchQuery = '';              // 搜索关键字（任务名/项目名）
+let workHoursOnly = true;          // 时间轴只展开工作时段（8-20点），夜间压缩
+try{ if(localStorage.getItem('gantt:workHoursOnly')==='0') workHoursOnly=false; }catch(_e){}
 let statsCollapsed = false;        // 统计面板折叠（记住偏好）
 try{ statsCollapsed = localStorage.getItem('gantt:statsCollapsed')==='1'; }catch(_e){}
 let undoSnapshot = null;           // 一步撤销的数据快照
@@ -562,18 +567,44 @@ function showToast(msg){
 }
 
 /* ---------- 排程与聚合 ---------- */
+/* 吃饭时间（北京时间，分钟表示）：排程会自动避开，工序不会被排进饭点 */
+const MEAL_BREAKS = [ [12*60, 12*60+30, '午休'], [17*60+30, 18*60, '晚餐'] ];
+/* 若 [t, t+dur分钟) 与某个饭点重叠，则把开始时间顺延到该饭点结束 */
+function skipMealBreaks(t, dur){
+  let cur = t;
+  for(let guard=0; guard<10; guard++){
+    const q = bjParts(cur);
+    const m = q.h*60 + q.mi;
+    let moved = false;
+    for(const b of MEAL_BREAKS){
+      if(m < b[1] && m + dur > b[0]){
+        cur = bjMake(q.y, q.mo, q.da, Math.floor(b[1]/60), b[1]%60);
+        moved = true; break;
+      }
+    }
+    if(!moved) return cur;
+  }
+  return cur;
+}
+
 function computeSchedule(entry){
-  let cursor=0; const out=[];
+  const start0 = entryStartDate(entry);
+  let cursorAbs = new Date(start0.getTime());
+  let workMin = 0;
+  const out = [];
   entry.steps.forEach(st=>{
     if(st.included===false) return;
-    const dur=Math.max(1, st.minutes|0);
-    out.push({step:st, startMin:cursor, durMin:dur});
-    cursor+=dur;
+    const dur = Math.max(1, st.minutes|0);
+    const s0 = skipMealBreaks(cursorAbs, dur);
+    const e0 = new Date(s0.getTime() + dur*60000);
+    out.push({step:st, startMin:(s0 - start0)/60000, durMin:dur, startAbs:s0, endAbs:e0});
+    cursorAbs = e0;
+    workMin += dur;
   });
-  return {segments:out, totalMin:cursor};
+  return {segments:out, totalMin:workMin, endAbs: out.length ? out[out.length-1].endAbs : start0};
 }
 function entryStartDate(entry){ return new Date(entry.startISO); }
-function entryPlannedEndDate(entry){ const {totalMin}=computeSchedule(entry); return new Date(entryStartDate(entry).getTime()+totalMin*60000); }
+function entryPlannedEndDate(entry){ const r=computeSchedule(entry); return r.endAbs; }
 function entryActualEndDate(entry){
   const now=new Date(); let latest=entryStartDate(entry);
   entry.steps.forEach(st=>{
@@ -913,26 +944,40 @@ function render(){
   const now=new Date();
   const todayStr=localDateStr(now);
 
-  /* 分日段：往日可折叠成窄条 */
-  const daySegs=[];
-  let c=new Date(start);
-  while(c<end){
-    const next=new Date(c.getTime()+86400000);
-    const segEnd = next<end ? next : end;
-    const hours = Math.round((segEnd-c)/3600000);
+  /* 分段带：往日整天折叠成窄条；展开日在"工作时段"模式下把夜间(0-8/20-24)也压成窄条 */
+  const NIGHT_W = 26, WORK_S = 8, WORK_E = 20;
+  const bands = [];          // x 映射用的时间带
+  const dayInfos = [];       // 表头用的按天信息
+  let c = new Date(start);
+  while(c < end){
+    const next = new Date(c.getTime()+86400000);
     const isPast = localDateStr(c) < todayStr;
     const collapsed = collapsePast && isPast;
-    daySegs.push({start:new Date(c), end:segEnd, hours, collapsed, width: collapsed?COLLAPSED_DAY_W:hours*zoomPx, x:0});
-    c=next;
+    const dayBands = [];
+    if(collapsed){
+      dayBands.push({start:new Date(c), end:next, width:COLLAPSED_DAY_W, type:'collapsed'});
+    } else if(workHoursOnly){
+      const w1 = new Date(c.getTime()+WORK_S*3600000);
+      const w2 = new Date(c.getTime()+WORK_E*3600000);
+      dayBands.push({start:new Date(c), end:w1, width:NIGHT_W, type:'night'});
+      dayBands.push({start:w1, end:w2, width:(WORK_E-WORK_S)*zoomPx, type:'work'});
+      dayBands.push({start:w2, end:next, width:NIGHT_W, type:'night'});
+    } else {
+      dayBands.push({start:new Date(c), end:next, width:24*zoomPx, type:'work'});
+    }
+    dayBands.forEach(b=>bands.push(b));
+    dayInfos.push({start:new Date(c), collapsed, bands:dayBands});
+    c = next;
   }
-  let acc=0; daySegs.forEach(s=>{ s.x=acc; acc+=s.width; });
+  let acc=0; bands.forEach(b=>{ b.x=acc; acc+=b.width; });
+  dayInfos.forEach(di=>{ di.x=di.bands[0].x; di.width=di.bands.reduce((a,b)=>a+b.width,0); });
   const timelineWidth=Math.max(600, acc);
 
   function timeToX(t){
-    if(t<=daySegs[0].start) return 0;
-    for(const s of daySegs){
-      if(t<s.end){
-        return s.x + ((t-s.start)/(s.end-s.start))*s.width;
+    if(t<=bands[0].start) return 0;
+    for(const b of bands){
+      if(t<b.end){
+        return b.x + ((t-b.start)/(b.end-b.start))*b.width;
       }
     }
     return acc;
@@ -943,37 +988,57 @@ function render(){
 
   /* 表头（自绘，避免表格列对不齐） */
   let headHTML='';
-  daySegs.forEach(s=>{
-    const off = dayOffInfo(s.start);
+  dayInfos.forEach(di=>{
+    const off = dayOffInfo(di.start);
     const badge = off.off ? `<span class="day-badge ${off.type}">${off.label}</span>` : '';
-    headHTML += `<div class="th-day ${s.collapsed?'collapsed':''}" style="left:${s.x}px; width:${s.width}px">${fmtDay(s.start)}${badge}${s.collapsed?' ▸':''}</div>`;
-    if(!s.collapsed){
+    headHTML += `<div class="th-day ${di.collapsed?'collapsed':''}" style="left:${di.x}px; width:${di.width}px">${fmtDay(di.start)}${badge}${di.collapsed?' ▸':''}</div>`;
+    if(!di.collapsed){
       const stepH = zoomPx>=45 ? 1 : 3;
-      for(let h=0; h<s.hours; h+=stepH){
-        const t=new Date(s.start.getTime()+h*3600000);
-        headHTML += `<div class="th-hour" style="left:${s.x+h*zoomPx}px">${String(t.getHours()).padStart(2,'0')}${zoomPx>=45?':00':''}</div>`;
-      }
+      di.bands.forEach(b=>{
+        if(b.type!=='work') return;
+        const hours = Math.round((b.end-b.start)/3600000);
+        const firstH = bjParts(b.start).h;
+        for(let h=0; h<hours; h+=stepH){
+          headHTML += `<div class="th-hour" style="left:${b.x+h*zoomPx}px">${String((firstH+h)%24).padStart(2,'0')}${zoomPx>=45?':00':''}</div>`;
+        }
+      });
     }
   });
   if(showNow) headHTML += `<span class="now-chip" style="left:${nowX}px">▼ ${fmtHM(now)}</span>`;
 
   /* 泳道底纹与网格（所有行复用同一段） */
   let deco='';
-  daySegs.forEach(s=>{
-    deco += `<div class="gridline day" style="left:${s.x}px"></div>`;
-    const off = dayOffInfo(s.start);
+  dayInfos.forEach(di=>{
+    deco += `<div class="gridline day" style="left:${di.x}px"></div>`;
+    const off = dayOffInfo(di.start);
     if(off.off){
-      deco += `<div class="shade dayoff-${off.type}" style="left:${s.x}px; width:${s.width}px"></div>`;
+      deco += `<div class="shade dayoff-${off.type}" style="left:${di.x}px; width:${di.width}px"></div>`;
     }
-    if(s.collapsed){
-      if(!off.off) deco += `<div class="shade collapsed" style="left:${s.x}px; width:${s.width}px"></div>`;
-    } else {
-      for(let h=0; h<s.hours; h++){
-        const hh=new Date(s.start.getTime()+h*3600000).getHours();
-        if(!off.off && (hh<8||hh>=18)) deco += `<div class="shade" style="left:${s.x+h*zoomPx}px; width:${zoomPx}px"></div>`;
-        deco += `<div class="gridline" style="left:${s.x+h*zoomPx}px"></div>`;
+    di.bands.forEach(b=>{
+      if(b.type==='collapsed'){
+        if(!off.off) deco += `<div class="shade collapsed" style="left:${b.x}px; width:${b.width}px"></div>`;
+      } else if(b.type==='night'){
+        deco += `<div class="shade night" style="left:${b.x}px; width:${b.width}px" title="夜间（已压缩）"></div>`;
+      } else {
+        const hours = Math.round((b.end-b.start)/3600000);
+        const firstH = bjParts(b.start).h;
+        for(let h=0; h<hours; h++){
+          const hh=(firstH+h)%24;
+          if(!off.off && !workHoursOnly && (hh<WORK_S||hh>=WORK_E)) deco += `<div class="shade" style="left:${b.x+h*zoomPx}px; width:${zoomPx}px"></div>`;
+          deco += `<div class="gridline" style="left:${b.x+h*zoomPx}px"></div>`;
+        }
+        /* 饭点底纹（排程会自动避开这两段） */
+        const p0=bjParts(b.start);
+        MEAL_BREAKS.forEach(mb=>{
+          const ms=bjMake(p0.y,p0.mo,p0.da, Math.floor(mb[0]/60), mb[0]%60);
+          const me=bjMake(p0.y,p0.mo,p0.da, Math.floor(mb[1]/60), mb[1]%60);
+          if(me>b.start && ms<b.end){
+            const x1=timeToX(ms<b.start?b.start:ms), x2=timeToX(me>b.end?b.end:me);
+            deco += `<div class="shade meal" style="left:${x1}px; width:${Math.max(2,x2-x1)}px" title="${mb[2]} ${String(Math.floor(mb[0]/60)).padStart(2,'0')}:${String(mb[0]%60).padStart(2,'0')}–${String(Math.floor(mb[1]/60)).padStart(2,'0')}:${String(mb[1]%60).padStart(2,'0')}（排程自动避开）"></div>`;
+          }
+        });
       }
-    }
+    });
   });
   if(showNow) deco += `<div class="now-line" style="left:${nowX}px"></div>`;
 
@@ -1144,6 +1209,7 @@ function render(){
           <button class="${zoomPx===120?'active':''}" onclick="__setZoom(120)">宽视图</button>
           <button class="${zoomPx===240?'active':''}" onclick="__setZoom(240)">精细</button>
           <button onclick="__gotoNow()" title="滚动到当前时间">📍现在</button>
+          <button onclick="__toggleWorkHours()" title="切换时间轴显示范围">${workHoursOnly?'⏰ 8-20点':'🌐 全天'}</button>
         </div>
         <button class="btn ${collapsePast?'toggled':''}" onclick="__toggleCollapse()">${collapsePast?'▸ 往日已折叠':'▾ 展开显示往日'}</button>
         <button class="btn" onclick="__openTemplates()">默认工序库</button>
@@ -1158,7 +1224,8 @@ function render(){
         <span class="lg"><i class="c-plan"></i>待开始</span>
         <span class="lg"><i class="c-prog"></i>进行中</span>
         <span class="lg"><i class="c-done"></i>已完成</span>
-        <span class="lg" style="color:#9aa5b1;">点圆圈/色条：第1下开始，第2下完成 ✓；点右侧「时间」栏文字可手动补填或修改实际时间</span>
+        <span class="lg"><i style="background:#ffe9d2; border:1px dashed #f0b477;"></i>午休/晚餐（排程自动避开）</span>
+        <span class="lg" style="color:#9aa5b1;">点圆圈/色条：第1下开始，第2下完成 ✓；点「时间」栏文字可改实际时间</span>
       </span>
     </div>
     <div class="filterbar">
@@ -1214,6 +1281,11 @@ window.__gotoNow = function(){
 };
 
 window.__toggleCollapse = function(){ collapsePast=!collapsePast; render(); };
+window.__toggleWorkHours = function(){
+  workHoursOnly=!workHoursOnly;
+  try{ localStorage.setItem('gantt:workHoursOnly', workHoursOnly?'1':'0'); }catch(_e){}
+  render();
+};
 window.__setZoom = function(px){ zoomPx=px; render(); };
 /* 折叠 / 展开某个任务的工序行 */
 window.__toggleTask = function(id){
