@@ -237,6 +237,31 @@
   ::-webkit-scrollbar-thumb{background:#c8d1dc; border-radius:5px;}
   ::-webkit-scrollbar-thumb:hover{background:#b3bfcc;}
   .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#1e2733; color:#fff; padding:10px 18px; border-radius:9px; font-size:12.5px; z-index:80; box-shadow:0 6px 20px rgba(16,24,40,.3);}
+  /* 筛选条 */
+  .filterbar{display:flex; align-items:center; gap:10px; padding:8px 20px 0; flex-wrap:wrap;}
+  .filterchips{display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel);}
+  .filterchips button{background:transparent; border:none; padding:6px 13px; font-size:12.5px; color:var(--text-dim); cursor:pointer;}
+  .filterchips button.active{background:var(--blue); color:#fff; font-weight:600;}
+  .filterchips button:not(:last-child){border-right:1px solid var(--line);}
+  #searchBox{border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:12.5px; width:210px; background:var(--panel); font-family:'Noto Sans SC',sans-serif;}
+  #searchBox:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(74,144,226,.12);}
+  .kbd-hint{font-size:11px; color:#9aa5b1;}
+  .spacer2{flex:1;}
+  .btn.tiny{padding:5px 11px; font-size:12px;}
+  /* 撤销按钮（toast 内） */
+  .undo-btn{margin-left:10px; background:var(--amber); color:#fff; border:none; border-radius:6px; padding:3px 12px; font-size:12px; font-weight:700; cursor:pointer;}
+  /* 实际用时超预计 */
+  .tc-line.over{color:var(--red); font-weight:600;}
+  /* 工序调序 */
+  .reorder-cell{white-space:nowrap;}
+  .mv-btn{background:#fff; border:1px solid var(--line); border-radius:5px; width:22px; height:22px; font-size:11px; cursor:pointer; color:var(--text-dim); padding:0;}
+  .mv-btn:hover{color:var(--blue); border-color:#bcd7f5;}
+  /* 手机浮动新建按钮 */
+  #fabNew{position:fixed; right:18px; bottom:22px; width:54px; height:54px; border-radius:50%; border:none;
+    background:var(--blue); color:#fff; font-size:28px; font-weight:600; cursor:pointer; z-index:60;
+    box-shadow:0 5px 16px rgba(37,99,176,.4); display:none;}
+  #fabNew:active{transform:scale(.94);}
+
   /* ============ 手机端自适应 ============
      左侧两根固定栏在窄屏上比屏幕还宽，会把甘特图挤没/错位，这里整体收窄 */
   @media (max-width: 700px){
@@ -264,6 +289,10 @@
     .kpi .k-value{font-size:17px;}
     .board-wrap{padding:10px 8px 40px;}
     .board-scroll{max-height:70vh;}
+    #fabNew{display:block;}
+    .kbd-hint{display:none;}
+    #searchBox{width:140px;}
+    .filterbar{padding:8px 10px 0;}
   }
 </style>
 </head>
@@ -311,6 +340,12 @@ let connectionStatus = 'connecting';
 let statsDate = '';  // 在下方北京时间工具初始化后赋值
 let didAutoScroll = false;         // 只在首次加载时自动定位到"现在"
 let savedScrollLeft = 0, savedScrollTop = 0;  // 记住看板滚动位置，刷新不跳
+let filterMode = 'all';            // 快速筛选：all/today/running/open
+let searchQuery = '';              // 搜索关键字（任务名/项目名）
+let statsCollapsed = false;        // 统计面板折叠（记住偏好）
+try{ statsCollapsed = localStorage.getItem('gantt:statsCollapsed')==='1'; }catch(_e){}
+let undoSnapshot = null;           // 一步撤销的数据快照
+let undoLabel = '';
 
 function uid(){ return 'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 /* ============ 时区钉死为北京时间（Asia/Shanghai） ============
@@ -827,12 +862,13 @@ function statsPanelHTML(){
   return `
   <div class="stats-panel">
     <div class="stats-head">
-      <h3>📊 工时统计</h3>
+      <h3 style="cursor:pointer;" onclick="__toggleStats()" title="点击${statsCollapsed?'展开':'收起'}统计">${statsCollapsed?'▸':'▾'} 📊 工时统计</h3>
       <input type="date" value="${statsDate}" onchange="__statsDateChange(this.value)">
       <span class="spacer"></span>
       <button class="btn primary" onclick="__copyReport()">📋 复制日报</button>
       <button class="btn" onclick="__copyWeekly()">🗓 复制周报</button>
     </div>
+    ${statsCollapsed?'':`
     <div class="kpi-row">
       <div class="kpi good"><div class="k-label">当日实际投入工时</div><div class="k-value">${fmtMin(s.actualMin)}</div>
         <div class="k-sub">${s.inProgressSteps? s.inProgressSteps+' 道工序进行中':'按实际开始/完成时间统计'}</div></div>
@@ -846,9 +882,14 @@ function statsPanelHTML(){
     <table class="proj-table">
       <thead><tr><th>项目</th><th style="text-align:right;">实际投入</th><th style="text-align:right;">计划</th><th style="text-align:right;">工序</th><th>占比</th></tr></thead>
       <tbody>${projRows}</tbody>
-    </table>
+    </table>`}
   </div>`;
 }
+window.__toggleStats=function(){
+  statsCollapsed=!statsCollapsed;
+  try{ localStorage.setItem('gantt:statsCollapsed', statsCollapsed?'1':'0'); }catch(_e){}
+  render();
+};
 
 /* ---------- 标题编辑 ---------- */
 window.__editTitle = function(){
@@ -937,11 +978,15 @@ function render(){
   if(showNow) deco += `<div class="now-line" style="left:${nowX}px"></div>`;
 
   let rowsHTML='';
+  const visibleEntries = state.entries.filter(passesFilter);
   if(state.entries.length===0){
     rowsHTML=`<tr><td class="namecol"></td><td class="timecol"></td><td class="timelinecell"><div class="empty" style="text-align:left;">
       <b>看板上还没有任务</b>点击右上角「＋新建任务」，把一个膜材批次排入流程。</div></td></tr>`;
+  } else if(visibleEntries.length===0){
+    rowsHTML=`<tr><td class="namecol"></td><td class="timecol"></td><td class="timelinecell"><div class="empty" style="text-align:left;">
+      <b>没有符合筛选条件的任务</b>换个筛选/搜索条件，或点「全部」恢复。</div></td></tr>`;
   } else {
-    const groups=groupByProject(state.entries);
+    const groups=groupByProject(visibleEntries);
     groups.forEach(group=>{
       rowsHTML += `<tr class="group-row"><td class="namecol"><div class="group-label">${escapeHTML(group.project)}</div></td><td class="timecol"></td><td></td></tr>`;
       group.entries.forEach(entry=>{
@@ -1034,8 +1079,14 @@ function render(){
             const ax1=timeToX(aS), ax2=timeToX(aE);
             baseline=`<div class="baseline" style="left:${ax1}px; width:${Math.max(4,ax2-ax1)}px"
               title="实际：${fmtHM(aS)} 开始${st.status==='done'?'，用时 '+Math.round(aMins)+' 分钟':'，进行中'}"></div>`;
-            actualText = fmtHM(aS)+'–'+(st.status==='done'?fmtHM(aE):'…');
-            actualCls = st.status==='done'?'done':'prog';
+            if(st.status==='done'){
+              actualText = fmtHM(aS)+'–'+fmtHM(aE);
+              actualCls = 'done';
+            } else {
+              const over = aMins > st.minutes;
+              actualText = fmtHM(aS)+'– 已'+Math.round(aMins)+'分'+(over?' ⚠':'');
+              actualCls = over ? 'over' : 'prog';
+            }
           }
           const stepTimeCol = `<td class="timecol" style="cursor:pointer;" onclick="__editTime('${entry.id}','${st.id}')" title="点击修改实际时间">
             <div class="tc-line"><span class="tc-k">预计</span>${fmtHM(bStart)}–${fmtHM(bEnd)}</div>
@@ -1110,6 +1161,19 @@ function render(){
         <span class="lg" style="color:#9aa5b1;">点圆圈/色条：第1下开始，第2下完成 ✓；点右侧「时间」栏文字可手动补填或修改实际时间</span>
       </span>
     </div>
+    <div class="filterbar">
+      <div class="filterchips">
+        <button class="${filterMode==='all'?'active':''}" onclick="__setFilter('all')">全部</button>
+        <button class="${filterMode==='today'?'active':''}" onclick="__setFilter('today')">今日</button>
+        <button class="${filterMode==='running'?'active':''}" onclick="__setFilter('running')">进行中</button>
+        <button class="${filterMode==='open'?'active':''}" onclick="__setFilter('open')">未完成</button>
+      </div>
+      <input type="search" id="searchBox" placeholder="🔍 搜索任务 / 项目…" value="${escapeHTML(searchQuery)}" oninput="__setSearch(this.value)">
+      <span class="kbd-hint">快捷键：N 新建 · T 现在 · F 搜索</span>
+      <span class="spacer2"></span>
+      <button class="btn tiny" onclick="__exportBackup()">💾 备份</button>
+      <button class="btn tiny" onclick="__importBackup()">📥 导入</button>
+    </div>
     ${statsPanelHTML()}
     <div class="board-wrap">
       <div class="board-scroll" id="scrollArea">
@@ -1173,6 +1237,7 @@ window.__toggleStep = async function(entryId, stepId){
     st.status='pending'; st.actualStart=null; st.actualMinutes=null;
   }
   flashId = entryId;
+  try{ if(navigator.vibrate) navigator.vibrate(st.status==='done'?[25,40,25]:15); }catch(_e){}
   await saveBoard();
 };
 
@@ -1298,10 +1363,117 @@ window.__duplicateEntry = function(id){
   copy.steps.forEach(s=>{ s.status='pending'; s.actualStart=null; s.actualMinutes=null; s.id=uid(); });
   openModal(copy);
 };
+function passesFilter(entry){
+  if(searchQuery){
+    const q=searchQuery.toLowerCase();
+    if(!(((entry.project||'')+' '+(entry.name||'')).toLowerCase().includes(q))) return false;
+  }
+  if(filterMode==='all') return true;
+  const incl=entry.steps.filter(x=>x.included!==false);
+  if(filterMode==='today'){
+    const t=localDateStr(new Date());
+    if(localDateStr(entryStartDate(entry))===t) return true;
+    return incl.some(x=>x.actualStart && localDateStr(new Date(x.actualStart))===t);
+  }
+  if(filterMode==='running') return incl.some(x=>x.status==='in_progress');
+  if(filterMode==='open') return !taskInfo(entry).finished;
+  return true;
+}
+window.__setFilter=function(m){ filterMode=m; render(); };
+
+/* 💾 数据备份与恢复（JSON 文件，含任务、模板、标题） */
+window.__exportBackup=function(){
+  const payload={ exportedAt:new Date().toISOString(), title:state.title||'', templates:state.templates, entries:state.entries };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='看板备份_'+localDateStr(new Date()).replace(/-/g,'')+'.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 800);
+  showToast('备份已下载。建议每周备份一次。');
+};
+window.__importBackup=function(){
+  let inp=document.getElementById('importFileInput');
+  if(!inp){
+    inp=document.createElement('input');
+    inp.type='file'; inp.accept='.json,application/json'; inp.id='importFileInput'; inp.style.display='none';
+    document.body.appendChild(inp);
+    inp.addEventListener('change', ()=>{
+      const f=inp.files && inp.files[0];
+      inp.value='';
+      if(!f) return;
+      const r=new FileReader();
+      r.onload=async ()=>{
+        try{
+          const data=JSON.parse(r.result);
+          if(!data || !Array.isArray(data.entries)) throw new Error('文件格式不对');
+          if(!confirm('将用备份（'+data.entries.length+' 个任务）覆盖当前云端数据，确定？（可撤销）')) return;
+          snapshotForUndo('导入备份前的数据');
+          state.entries=normalizeEntries(data.entries);
+          if(Array.isArray(data.templates)&&data.templates.length) state.templates=data.templates;
+          if(data.title) state.title=data.title;
+          await saveBoard();
+          showUndoToast('备份已导入并同步云端。');
+        }catch(err){ showToast('导入失败：'+err.message); }
+      };
+      r.readAsText(f);
+    });
+  }
+  inp.click();
+};
+window.__setSearch=function(v){
+  searchQuery=v; render();
+  const sb=document.getElementById('searchBox');
+  if(sb){ sb.focus(); try{ sb.setSelectionRange(v.length,v.length); }catch(_e){} }
+};
+
+function snapshotForUndo(label){
+  undoSnapshot = JSON.stringify(state.entries);
+  undoLabel = label;
+}
+function showUndoToast(msg){
+  const t=document.createElement('div');
+  t.className='toast';
+  t.innerHTML = escapeHTML(msg)+' <button class="undo-btn" id="undoBtn">撤销</button>';
+  document.body.appendChild(t);
+  const timer=setTimeout(()=>t.remove(), 6000);
+  t.querySelector('#undoBtn').onclick=async ()=>{
+    clearTimeout(timer); t.remove();
+    if(!undoSnapshot) return;
+    state.entries = normalizeEntries(JSON.parse(undoSnapshot));
+    undoSnapshot=null;
+    await saveBoard();
+    showToast('已撤销：'+undoLabel);
+  };
+}
+
 window.__deleteEntry = async function(id){
+  const en=state.entries.find(e=>e.id===id);
   if(!confirm('确定要从看板上移除这条任务吗？')) return;
+  snapshotForUndo('删除「'+(en?en.name:'任务')+'」');
   state.entries=state.entries.filter(e=>e.id!==id);
   await saveBoard();
+  showUndoToast('任务已删除。');
+};
+
+/* ⚡ 按计划一键完成该任务剩余全部工序（补录场景），可撤销 */
+window.__finishAllPlanned = async function(id){
+  const entry=state.entries.find(e=>e.id===id);
+  if(!entry) return;
+  const {segments}=computeSchedule(entry);
+  const remain=segments.filter(g=>g.step.status!=='done');
+  if(!remain.length){ showToast('该任务已全部完成。'); return; }
+  if(!confirm('将按计划时间补录并完成剩余 '+remain.length+' 道工序，确定？（可撤销）')) return;
+  snapshotForUndo('批量完成「'+entry.name+'」剩余工序');
+  const base=entryStartDate(entry).getTime();
+  remain.forEach(g=>{
+    g.step.actualStart=new Date(base+g.startMin*60000).toISOString();
+    g.step.actualMinutes=g.durMin;
+    g.step.status='done';
+  });
+  flashId=id;
+  await saveBoard();
+  showUndoToast('已按计划完成 '+remain.length+' 道工序。');
 };
 
 function stepRowHTML(s, idx){
@@ -1311,6 +1483,7 @@ function stepRowHTML(s, idx){
     <td><input type="text" class="stepLabel" data-step-idx="${idx}" placeholder="工序名称" value="${escapeHTML(s.label)}"></td>
     <td><input type="number" min="1" class="stepMinutes" data-step-idx="${idx}" value="${s.minutes}"> 分</td>
     <td>${s.status==='done'?'<span style="color:var(--green); font-size:11px;">已完成</span>':(s.status==='in_progress'?'<span style="color:var(--amber); font-size:11px;">进行中</span>':'')}</td>
+    <td class="reorder-cell"><button type="button" class="mv-btn" data-mv-up="${idx}" title="上移">↑</button><button type="button" class="mv-btn" data-mv-dn="${idx}" title="下移">↓</button></td>
     <td><button type="button" class="del-row" data-del-idx="${idx}" title="删除此工序">×</button></td>
   </tr>`;
 }
@@ -1342,9 +1515,9 @@ function openModal(draft){
     let html='';
     if(collapsedCount>0){
       const names=workingSteps.slice(0,collapsedCount).map(s=>(s.label||'').trim()||'未命名').slice(0,3).join('、');
-      html+=`<tr class="collapse-bar"><td colspan="6"><button type="button" id="expandSteps">▸ 已折叠前 ${collapsedCount} 道工序（${escapeHTML(names)}${collapsedCount>3?' 等':''}）— 点击展开</button></td></tr>`;
+      html+=`<tr class="collapse-bar"><td colspan="7"><button type="button" id="expandSteps">▸ 已折叠前 ${collapsedCount} 道工序（${escapeHTML(names)}${collapsedCount>3?' 等':''}）— 点击展开</button></td></tr>`;
     } else if(workingSteps.length>5){
-      html+=`<tr class="collapse-bar"><td colspan="6"><button type="button" id="collapseSteps">▾ 折叠前 ${autoCollapseCount()} 道工序，方便编辑下方新工序</button></td></tr>`;
+      html+=`<tr class="collapse-bar"><td colspan="7"><button type="button" id="collapseSteps">▾ 折叠前 ${autoCollapseCount()} 道工序，方便编辑下方新工序</button></td></tr>`;
     }
     html+=workingSteps.map((s,idx)=> idx<collapsedCount ? '' : stepRowHTML(s,idx)).join('');
     return html;
@@ -1375,7 +1548,7 @@ function openModal(draft){
       <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px; font-weight:600;">工序（点击标签快速添加）</label>
       <div class="quickadd" id="quickAddArea">${quickAddHTML()}</div>
       <table class="steps-table">
-        <thead><tr><th></th><th></th><th>工序名称</th><th>预计时长</th><th>状态</th><th></th></tr></thead>
+        <thead><tr><th></th><th></th><th>工序名称</th><th>预计时长</th><th>状态</th><th>调序</th><th></th></tr></thead>
         <tbody id="stepsBody">${stepsTableHTML()}</tbody>
       </table>
       <div class="modal-actions">
@@ -1390,6 +1563,7 @@ function openModal(draft){
   /* 编辑已有任务时：可直接在弹窗里删除整个任务 */
   const fDelete=document.getElementById('fDelete');
   if(fDelete) fDelete.onclick=async ()=>{
+    snapshotForUndo('删除任务');
     if(!confirm('确定要删除整个任务及其所有工序记录吗？此操作不可撤销。')) return;
     const idToDel=editingId;
     state.entries=state.entries.filter(e=>e.id!==idToDel);
@@ -1613,6 +1787,25 @@ window.__closeTemplates = function(){
 };
 
 setInterval(()=>{ if(loaded && !NEEDS_SETUP) render(); }, 30000);
+
+/* 手机端右下角浮动"＋新建任务"按钮（常驻，不随渲染重建） */
+(function(){
+  const fab=document.createElement('button');
+  fab.id='fabNew'; fab.textContent='＋'; fab.title='新建任务';
+  fab.onclick=()=>window.__openNew(false);
+  document.body.appendChild(fab);
+})();
+
+/* 全局快捷键：N 新建 / T 回到现在 / F 聚焦搜索（输入框和弹窗打开时不触发） */
+document.addEventListener('keydown',(e)=>{
+  if(document.querySelector('.overlay')) return;
+  const tag=(e.target&&e.target.tagName)||'';
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||e.ctrlKey||e.metaKey||e.altKey) return;
+  const k=e.key.toLowerCase();
+  if(k==='n'){ e.preventDefault(); window.__openNew(false); }
+  else if(k==='t'){ e.preventDefault(); window.__gotoNow(); }
+  else if(k==='f'){ e.preventDefault(); const sb=document.getElementById('searchBox'); if(sb) sb.focus(); }
+});
 if(NEEDS_SETUP){ render(); } else { initSupabase(); render(); }
 
 /* ======================================================================
