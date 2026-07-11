@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生产计划甘特图看板</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --line:#e4e8ee; --line-2:#eef1f5;
+    --text:#1e2733; --text-dim:#7b8794;
+    --blue:#4a90e2; --blue-soft:#dbeafe; --amber:#f5a623;
+    --green:#34b46f; --red:#e5484d; --radius:8px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0; padding:0; background:var(--bg);}
+  body{font-family:'Noto Sans SC',-apple-system,sans-serif; color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased;}
+
+  /* ===== 顶栏 ===== */
+  .topbar{display:flex; align-items:center; justify-content:space-between; padding:13px 20px;
+    background:var(--panel); border-bottom:1px solid var(--line); gap:12px; flex-wrap:wrap; position:sticky; top:0; z-index:20;}
+  .brand h1{font-size:18px; margin:0; font-weight:700; display:flex; align-items:center; gap:8px;}
+  .title-edit-btn{background:transparent; border:1px solid var(--line); color:var(--text-dim); border-radius:5px; font-size:11px; padding:2px 7px; cursor:pointer;}
+  .title-edit-btn:hover{color:var(--text); border-color:#c4ccd6;}
+  .toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  .btn{background:var(--panel); color:var(--text); border:1px solid var(--line); padding:8px 14px;
+    border-radius:var(--radius); font-size:13px; cursor:pointer; font-weight:500; transition:.12s; box-shadow:0 1px 2px rgba(16,24,40,.04);}
+  .btn:hover{border-color:#c4ccd6; background:#fafbfc;}
+  .btn.primary{background:var(--blue); color:#fff; border-color:var(--blue); font-weight:600;}
+  .btn.primary:hover{background:#3d80d0;}
+  .btn.toggled{background:#eef4fc; color:var(--blue); border-color:#bcd7f5;}
+  .zoomset{display:flex; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--panel);}
+  .zoomset button{background:transparent; color:var(--text-dim); border:none; padding:8px 12px; font-size:12px; cursor:pointer;}
+  .zoomset button.active{background:var(--blue); color:#fff; font-weight:600;}
+  .zoomset button:not(:last-child){border-right:1px solid var(--line);}
+
+  .subbar{display:flex; align-items:center; gap:18px; padding:10px 20px 0; flex-wrap:wrap;}
+  .status{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim);}
+  .dot{width:8px; height:8px; border-radius:50%; background:#c4ccd6;}
+  .dot.ok{background:var(--green);}
+  .dot.err{background:var(--red);}
+  .dot.warn{background:var(--amber); animation:pulse-dot 1.2s ease-in-out infinite;}
+  @keyframes pulse-dot{0%,100%{opacity:1;}50%{opacity:.4;}}
+  .legend{display:flex; gap:14px; font-size:12px; color:var(--text-dim); align-items:center; flex-wrap:wrap;}
+  .lg{display:inline-flex; align-items:center; gap:5px;}
+  .lg i{width:16px; height:10px; border-radius:5px; display:inline-block;}
+  .lg .c-plan{background:var(--blue-soft); border:1.5px solid var(--blue);}
+  .lg .c-prog{background:var(--amber);}
+  .lg .c-done{background:var(--green);}
+
+  /* ===== 统计面板 ===== */
+  .stats-panel{margin:14px 20px 0; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:0 1px 3px rgba(16,24,40,.06);}
+  .stats-head{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+  .stats-head h3{margin:0; font-size:14px; font-weight:700;}
+  .stats-head input[type=date]{border:1px solid var(--line); border-radius:7px; padding:5px 9px; font-size:12.5px; color:var(--text); font-family:'Noto Sans SC',sans-serif;}
+  .stats-head .spacer{flex:1;}
+  .kpi-row{display:flex; gap:12px; flex-wrap:wrap;}
+  .kpi{flex:1; min-width:150px; background:#f8fafc; border:1px solid var(--line-2); border-radius:10px; padding:10px 14px;}
+  .kpi .k-label{font-size:11.5px; color:var(--text-dim); margin-bottom:3px;}
+  .kpi .k-value{font-size:20px; font-weight:700; font-family:'IBM Plex Mono',monospace; line-height:1.2;}
+  .kpi .k-sub{font-size:11px; color:var(--text-dim); margin-top:2px;}
+  .kpi.good .k-value{color:var(--green);}
+  .kpi.warn .k-value{color:var(--amber);}
+  .kpi.bad .k-value{color:var(--red);}
+  .proj-table{width:100%; border-collapse:collapse; margin-top:12px; font-size:12.5px;}
+  .proj-table th{text-align:left; color:var(--text-dim); font-weight:600; font-size:11.5px; padding:5px 8px; border-bottom:1px solid var(--line);}
+  .proj-table td{padding:6px 8px; border-bottom:1px solid var(--line-2);}
+  .proj-table .num{font-family:'IBM Plex Mono',monospace; text-align:right;}
+  .util-track{height:6px; background:var(--line-2); border-radius:3px; overflow:hidden; min-width:80px;}
+  .util-fill{height:100%; background:var(--blue); border-radius:3px;}
+
+  /* ===== 甘特区 ===== */
+  .board-wrap{padding:14px 20px 50px;}
+  .board-scroll{overflow:auto; border:1px solid var(--line); border-radius:12px; background:var(--panel); max-height:76vh; box-shadow:0 1px 3px rgba(16,24,40,.06);}
+  table.board{border-collapse:separate; border-spacing:0;}
+  .namecol{position:sticky; left:0; z-index:3; background:var(--panel); width:310px; min-width:310px; max-width:310px;
+    border-right:1px solid var(--line); padding:0 14px; vertical-align:middle;}
+  thead th{position:sticky; top:0; z-index:4; background:#fafbfd; border-bottom:1px solid var(--line); padding:0;}
+  thead .corner{position:sticky; left:0; z-index:6; background:#fafbfd;}
+  .tl-header{position:relative; height:42px; background:#fafbfd;}
+  .th-day{position:absolute; top:5px; font-size:12px; font-weight:700; color:var(--text); padding-left:7px; border-left:2px solid #b9c4d1; height:32px; white-space:nowrap; overflow:hidden;}
+  .th-day.collapsed{color:var(--text-dim); font-weight:600;}
+  .th-hour{position:absolute; top:24px; font-size:10px; color:#5f6b78; font-family:'IBM Plex Mono',monospace; transform:translateX(3px);}
+  .now-chip{position:absolute; top:1px; transform:translateX(-50%); background:var(--red); color:#fff;
+    font-size:10px; font-weight:700; padding:2px 7px; border-radius:9px; white-space:nowrap; z-index:7; box-shadow:0 2px 6px rgba(229,72,77,.4);}
+
+  tr.group-row td{background:#f0f4fa; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:8px 14px;}
+  .group-label{font-size:13px; font-weight:700; color:#2c5aa0; display:flex; align-items:center; gap:8px;}
+  .group-label::before{content:''; width:4px; height:16px; background:var(--blue); border-radius:2px;}
+
+  tr.task-row td{background:#fff; border-bottom:1px solid var(--line-2); padding:0;}
+  tr.task-row .namecol{padding:10px 14px 6px;}
+  .task-head{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;}
+  .task-name{font-size:14px; font-weight:700;}
+  .temp-badge{font-size:10px; color:#fff; background:var(--amber); padding:1px 7px; border-radius:9px; font-weight:600;}
+  .done-badge{font-size:10.5px; color:#fff; background:var(--green); padding:1px 8px; border-radius:9px; font-weight:600;}
+  .task-meta{font-size:11px; color:var(--text-dim); width:100%;}
+  .task-actions{display:flex; gap:8px; margin-top:5px; flex-wrap:wrap;}
+  .mini-btn{background:transparent; border:none; color:var(--blue); font-size:11.5px; cursor:pointer; padding:0;}
+  .mini-btn:hover{text-decoration:underline;}
+  .mini-btn.danger{color:var(--red);}
+  .mini-btn.quick{border:1px solid #bcd7f5; background:#f2f8ff; padding:2px 10px; border-radius:12px; font-weight:600;}
+  .mini-btn.quick.finish{border-color:#f3d9a4; background:#fdf6e7; color:#b57904;}
+  .mini-btn.quick:hover{text-decoration:none; filter:brightness(.97);}
+  .progress-track{height:5px; background:var(--line-2); border-radius:3px; margin-top:7px; overflow:hidden;}
+  .progress-fill{height:100%; background:var(--green); border-radius:3px; transition:width .3s;}
+
+  tr.step-row td{border-bottom:1px solid var(--line-2);}
+  tr.step-row:hover td{background:#f8fafc;}
+  tr.step-row .namecol{padding:0 14px;}
+  .step-line{display:flex; align-items:center; gap:7px; height:42px;}
+  .step-status-ic{width:20px; height:20px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+    font-size:11px; color:#fff; font-weight:800; border:2px solid #b6c1cd; background:#fff; cursor:pointer; transition:.12s;}
+  .step-status-ic:hover{border-color:var(--blue); transform:scale(1.12);}
+  .step-status-ic.inprogress{border-color:var(--amber); background:var(--amber);}
+  .step-status-ic.done{border-color:var(--green); background:var(--green);}
+  .step-label-text{font-size:13px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  tr.step-row.is-done .step-label-text{color:#a4afba; text-decoration:line-through;}
+  .step-min{font-size:11px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; flex:none;}
+  .time-btn{flex:none; background:transparent; border:1px solid var(--line); color:var(--text-dim); border-radius:6px; font-size:10.5px; padding:2px 7px; cursor:pointer;}
+  .time-btn:hover{color:var(--blue); border-color:#bcd7f5;}
+  .step-btn{flex:none; font-size:11px; padding:3px 11px; border-radius:12px; cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--text-dim); font-weight:500;}
+  .step-btn.start{color:var(--blue); border-color:#bcd7f5;}
+  .step-btn.start:hover{background:var(--blue); color:#fff; border-color:var(--blue);}
+  .step-btn.finish{color:#b57904; border-color:#f3d9a4; background:#fdf6e7;}
+  .step-btn.finish:hover{background:var(--amber); color:#fff; border-color:var(--amber);}
+  .step-btn.undo{color:var(--green); border-color:transparent; background:transparent; font-weight:700; font-size:13px;}
+
+  .timelinecell{position:relative; padding:0; vertical-align:middle;}
+  .lane{position:relative; height:42px;}
+  .lane.task-lane{height:34px;}
+  .shade{position:absolute; top:0; bottom:0; background:#f2f5f9; pointer-events:none;}
+  .shade.dayoff-weekend{background:#fbf3e2;}
+  .shade.dayoff-holiday{background:#fdecec;}
+  .day-badge{font-size:10px; margin-left:5px; padding:1px 7px; border-radius:8px; font-weight:600; vertical-align:1px;}
+  .day-badge.weekend{background:#fef3c7; color:#b45309;}
+  .day-badge.holiday{background:#fee2e2; color:#dc2626;}
+
+  /* 时间栏（第二列固定：预计与实际起止时间） */
+  .timecol{
+    position:sticky; left:310px; z-index:3; background:var(--panel);
+    width:148px; min-width:148px; max-width:148px; border-right:1px solid var(--line);
+    padding:4px 10px; vertical-align:middle;
+  }
+  .tc-line{font-size:11px; font-family:'IBM Plex Mono',monospace; color:var(--text); line-height:1.7; white-space:nowrap;}
+  .tc-line .tc-k{display:inline-block; width:30px; color:var(--text-dim); font-family:'Noto Sans SC',sans-serif; font-size:10.5px;}
+  .tc-line.done{color:var(--green); font-weight:600;}
+  .tc-line.prog{color:#b57904;}
+  .tc-line.dim{color:#b3bdc8;}
+  tr.step-row .timecol:hover{background:#eef4fb;}
+  th.timecol{z-index:6; top:0; background:#fafbfd; vertical-align:bottom; padding-bottom:8px;}
+
+  /* 数据变动后的图表互动反馈：改动的任务整块闪一下、色条弹入 */
+  @keyframes rowFlash{0%{background:#fff3c4;}100%{background:transparent;}}
+  tr.flash-row td{animation:rowFlash 1.5s ease;}
+  @keyframes barPop{0%{transform:scaleY(.35); opacity:.25;}60%{transform:scaleY(1.15);}100%{transform:scaleY(1); opacity:1;}}
+  tr.flash-row .bar, tr.flash-row .summary-bar{animation:barPop .45s ease; transform-origin:center;}
+
+  /* 悬停联动：指到左侧工序，右侧色条同步突出 */
+  tr.step-row:hover .bar{filter:brightness(1.07); box-shadow:0 3px 10px rgba(16,24,40,.22);}
+  tr.step-row:hover .timecol{background:#f8fafc;}
+
+  .date-hint{font-size:12px; color:#b45309; background:#fff7ed; border:1px solid #fde4bf; border-radius:8px; padding:7px 11px; margin:-4px 0 12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .date-hint button{border:1px solid #f3c98a; background:#fff; color:#b45309; border-radius:7px; font-size:11.5px; padding:3px 10px; cursor:pointer; font-weight:600;}
+  .date-hint button:hover{background:#b45309; color:#fff;}
+  .shade.collapsed{background:#e9edf3;
+    background-image:repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(0,0,0,.035) 6px, rgba(0,0,0,.035) 12px);}
+  .gridline{position:absolute; top:0; bottom:0; width:1px; background:var(--line-2); pointer-events:none;}
+  .gridline.day{background:#b9c4d1; width:2px;}
+  .now-line{position:absolute; top:0; bottom:0; width:2px; background:var(--red); z-index:5; pointer-events:none; box-shadow:0 0 5px rgba(229,72,77,.55);}
+
+  .summary-bar{position:absolute; top:10px; height:14px; background:#e2e8f0; border-radius:7px; border:1px solid #cbd5e1;}
+  .summary-fill{position:absolute; top:0; bottom:0; left:0; background:#b6c6da; border-radius:7px;}
+
+  .bar{position:absolute; top:10px; height:22px; border-radius:11px; cursor:pointer; display:flex; align-items:center; padding:0 9px;
+    font-size:11px; font-weight:600; white-space:nowrap; box-shadow:0 1px 2px rgba(16,24,40,.10); transition:transform .1s, box-shadow .1s;}
+  .bar:hover{transform:translateY(-1px); box-shadow:0 3px 8px rgba(16,24,40,.15);}
+  .bar.pending{background:var(--blue-soft); border:1.5px solid var(--blue); color:#2563b0;}
+  .bar.inprogress{background:var(--amber); color:#fff;
+    background-image:linear-gradient(45deg, rgba(255,255,255,.18) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.18) 50%, rgba(255,255,255,.18) 75%, transparent 75%);
+    background-size:16px 16px; animation:stripes 1s linear infinite;}
+  @keyframes stripes{0%{background-position:0 0;}100%{background-position:16px 0;}}
+  .bar.done{background:var(--green); color:#fff;}
+  .bar .in-label{overflow:hidden; text-overflow:ellipsis;}
+  .out-label{position:absolute; top:14px; font-size:11px; font-weight:600; color:var(--text-dim); white-space:nowrap; pointer-events:none;}
+  .baseline{position:absolute; top:34px; height:4px; border-radius:2px; background:#64748b; opacity:.75;}
+
+  .empty{padding:70px 20px; text-align:center; color:var(--text-dim);}
+  .empty b{color:var(--text); display:block; font-size:16px; margin-bottom:6px;}
+
+  /* ===== 弹窗 ===== */
+  .overlay{position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto; z-index:50;}
+  .modal{background:#fff; border-radius:14px; width:100%; max-width:680px; padding:24px; box-shadow:0 10px 40px rgba(16,24,40,.2);}
+  .modal h2{margin:0 0 4px; font-size:17px;}
+  .modal .sub{color:var(--text-dim); font-size:12.5px; margin-bottom:16px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px; font-weight:600;}
+  .field input{width:100%; background:#fff; border:1px solid var(--line); color:var(--text); padding:9px 11px; border-radius:8px; font-size:13.5px; font-family:'Noto Sans SC',sans-serif;}
+  .field input:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(74,144,226,.12);}
+  .row2{display:flex; gap:12px;}
+  .row2 > *{flex:1;}
+  .steps-table{width:100%; border-collapse:collapse; margin-top:6px;}
+  .steps-table th{text-align:left; font-size:11px; color:var(--text-dim); padding:5px 6px; border-bottom:1px solid var(--line); font-weight:600;}
+  .steps-table td{padding:6px; border-bottom:1px solid var(--line-2); vertical-align:middle;}
+  .steps-table input[type=number]{width:66px; padding:6px; font-size:12.5px; border:1px solid var(--line); border-radius:6px;}
+  .steps-table input[type=text]{padding:6px 8px; font-size:12.5px; width:100%; border:1px solid var(--line); border-radius:6px;}
+  .swatch{width:12px; height:12px; border-radius:3px; display:inline-block; flex:none;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
+  .checkbox-row{display:flex; align-items:center; gap:7px; margin-bottom:14px;}
+  .checkbox-row input{width:15px; height:15px;}
+  .checkbox-row label{font-size:12.5px; color:var(--text-dim); margin:0;}
+  .quickadd{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 6px;}
+  .quickadd button{font-size:11.5px; padding:4px 11px; border-radius:14px; border:1px solid var(--line); background:#fff; color:var(--text-dim); cursor:pointer; display:inline-flex; align-items:center; gap:5px;}
+  .quickadd button:hover{color:var(--text); border-color:#c4ccd6; background:#fafbfc;}
+  .del-row{background:transparent; border:none; color:var(--red); cursor:pointer; font-size:16px; line-height:1;}
+  .collapse-bar td{padding:0; border-bottom:1px solid var(--line-2);}
+  .collapse-bar button{width:100%; text-align:left; background:#f4f7fb; border:none; color:#5b708c; font-size:11.5px; padding:7px 10px; cursor:pointer; font-weight:600;}
+  .collapse-bar button:hover{background:#eaf1f9; color:var(--blue);}
+  .plan-fill{display:flex; align-items:center; gap:9px; margin:-4px 0 12px; flex-wrap:wrap;}
+  .plan-fill button{border:1px solid #bcd7f5; background:#eef4fc; color:var(--blue); border-radius:7px; font-size:11.5px; padding:4px 11px; cursor:pointer; font-weight:600;}
+  .plan-fill button:hover{background:var(--blue); color:#fff;}
+  .plan-fill .plan-note{font-size:11.5px; color:var(--text-dim);}
+  .quickadd button.manage-tpl{border-style:dashed; color:var(--blue); border-color:#bcd7f5;}
+  .quickadd button.manage-tpl:hover{background:#eef4fc;}
+  .task-caret{flex:none; align-self:center; width:18px; height:18px; border-radius:5px; border:1px solid var(--line); background:#fff; color:var(--text-dim);
+    font-size:10px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:.12s;}
+  .task-caret:hover{color:var(--blue); border-color:#bcd7f5; background:#eef4fc;}
+  tr.task-row.task-collapsed td{border-bottom:1px solid var(--line);}
+
+  .setup{max-width:640px; margin:60px auto; background:#fff; border:1px solid var(--line); border-radius:14px; padding:28px 30px; box-shadow:0 4px 16px rgba(16,24,40,.08);}
+  .setup ol{padding-left:20px; line-height:1.9; font-size:13.5px;}
+  .setup code{background:#f1f4f8; padding:1px 6px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:12px;}
+  .setup a{color:var(--blue);}
+
+  ::-webkit-scrollbar{height:10px; width:10px;}
+  ::-webkit-scrollbar-track{background:#f1f4f8;}
+  ::-webkit-scrollbar-thumb{background:#c8d1dc; border-radius:5px;}
+  ::-webkit-scrollbar-thumb:hover{background:#b3bfcc;}
+  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#1e2733; color:#fff; padding:10px 18px; border-radius:9px; font-size:12.5px; z-index:80; box-shadow:0 6px 20px rgba(16,24,40,.3);}
+  /* ============ 手机端自适应 ============
+     左侧两根固定栏在窄屏上比屏幕还宽，会把甘特图挤没/错位，这里整体收窄 */
+  @media (max-width: 700px){
+    .namecol{width:168px; min-width:168px; max-width:168px;}
+    tr.task-row .namecol{padding:8px 8px 5px;}
+    tr.step-row .namecol{padding:0 8px;}
+    .timecol{width:104px; min-width:104px; max-width:104px; left:168px; padding:3px 6px;}
+    th.timecol{left:168px; font-size:9.5px;}
+    .tc-line{font-size:9.5px; line-height:1.6;}
+    .tc-line .tc-k{width:24px; font-size:9px;}
+    .task-head .task-name{font-size:12.5px;}
+    .task-meta{font-size:9.5px;}
+    .mini-btn{font-size:10.5px;}
+    .step-line{gap:5px; height:36px;}
+    .step-label-text{font-size:11.5px;}
+    .step-min{display:none;}
+    .step-btn{padding:2px 7px; font-size:10px;}
+    .step-status-ic{width:17px; height:17px; font-size:10px;}
+    .btn{padding:6px 10px; font-size:12px;}
+    .zoomset button{padding:6px 8px; font-size:11px;}
+    .topbar{padding:10px 10px; gap:8px;}
+    .subbar{padding:8px 10px 0; gap:10px;}
+    .stats-panel{margin:10px 10px 0; padding:10px 10px;}
+    .kpi{min-width:45%; padding:8px 10px;}
+    .kpi .k-value{font-size:17px;}
+    .board-wrap{padding:10px 8px 40px;}
+    .board-scroll{max-height:70vh;}
+  }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty">加载中…</div></div>
+
+<script type="module">
+/* ====================== Supabase 配置 ======================
+   国内可直连的免费云数据库。注册步骤见页面引导（配置未填时会显示）。
+   1) https://supabase.com 注册 → New project（区域选 Singapore / Tokyo）
+   2) 左侧 SQL Editor → 粘贴运行文件底部注释里的建表 SQL
+   3) Project Settings → API → 复制 Project URL 和 anon public key 填到下面 */
+const SUPABASE_URL = "https://ocifhggfsapdjtsvschn.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jaWZoZ2dmc2FwZGp0c3ZzY2huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM2NjE3NTgsImV4cCI6MjA5OTIzNzc1OH0.DtMq213Ni5bDOHnJlNdxDsHtPSxEXG0OstYgcuySfgc";
+/* ============================================================ */
+
+const NEEDS_SETUP = SUPABASE_URL.includes("YOUR_") || SUPABASE_ANON_KEY.includes("YOUR_");
+const COLLAPSED_DAY_W = 92;
+
+const STEP_PALETTE = ['#4a90e2','#43bccd','#34b46f','#9ac24a','#f5a623','#e08a3d','#e5484d','#b163d0','#7c8ca6','#3ec9c9','#d0685f','#8a7fd0'];
+let paletteCursor = 0;
+function nextColor(){ const c = STEP_PALETTE[paletteCursor % STEP_PALETTE.length]; paletteCursor++; return c; }
+
+const STEP_TEMPLATES_DEFAULT = [
+  {label:'领料', color:'#4a90e2', minutes:10},
+  {label:'撕保护膜', color:'#43bccd', minutes:10},
+  {label:'贴膜', color:'#34b46f', minutes:20},
+  {label:'修补', color:'#9ac24a', minutes:15},
+  {label:'CR120', color:'#f5a623', minutes:60},
+  {label:'脱胶', color:'#e08a3d', minutes:15},
+  {label:'裁切', color:'#e5484d', minutes:20},
+  {label:'组装', color:'#b163d0', minutes:25},
+  {label:'成品拍照', color:'#7c8ca6', minutes:5},
+];
+
+let state = { templates: STEP_TEMPLATES_DEFAULT.map(s=>({...s})), entries: [], title: '' };
+let zoomPx = 60;
+/* 看板上被折叠（只显示任务头、隐藏工序行）的任务 id 集合；新建任务时旧任务自动折叠 */
+let collapsedTaskIds = new Set();
+let collapsePast = true;
+let editingId = null;
+let loaded = false;
+let connectionStatus = 'connecting';
+
+let statsDate = '';  // 在下方北京时间工具初始化后赋值
+let didAutoScroll = false;         // 只在首次加载时自动定位到"现在"
+let savedScrollLeft = 0, savedScrollTop = 0;  // 记住看板滚动位置，刷新不跳
+
+function uid(){ return 'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+/* ============ 时区钉死为北京时间（Asia/Shanghai） ============
+   所有"这条记录算哪一天 / 显示几点"的判定统一按北京时间计算，
+   不再依赖各设备自己的时区设置，保证多端显示完全一致。 */
+const TZ = 'Asia/Shanghai';
+const _bjDateFmt = new Intl.DateTimeFormat('en-CA', {timeZone:TZ, year:'numeric', month:'2-digit', day:'2-digit'});
+const _bjHMFmt   = new Intl.DateTimeFormat('zh-CN', {timeZone:TZ, hour:'2-digit', minute:'2-digit', hour12:false});
+const _bjDowFmt  = new Intl.DateTimeFormat('zh-CN', {timeZone:TZ, weekday:'short'});
+const _dowMap = {'周日':0,'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6};
+function bjDow(d){ return _dowMap[_bjDowFmt.format(d)] ?? d.getDay(); }
+/* 由"北京时间的年月日时分"构造绝对时刻（北京=UTC+8，无夏令时） */
+function bjMake(y, mo, da, h, mi){ return new Date(Date.UTC(y, mo-1, da, (h||0)-8, mi||0, 0)); }
+function bjParts(d){
+  const ds = _bjDateFmt.format(d).split('-');
+  const hm = _bjHMFmt.format(d).split(':');
+  return {y:+ds[0], mo:+ds[1], da:+ds[2], h:+hm[0], mi:+hm[1]};
+}
+/* 该时刻所在"北京日"的 00:00（绝对时刻） */
+function bjMidnight(d){ const p=bjParts(d); return bjMake(p.y, p.mo, p.da, 0, 0); }
+
+function localDateStr(d){ return _bjDateFmt.format(d); }
+statsDate = localDateStr(new Date());
+
+/* ---------- 节假日与周末 ----------
+   下面是 2026 年主要法定节假日（按节日当天及常见连休范围粗排，
+   具体调休以国务院通知为准，可直接在这里增删日期）。 */
+const HOLIDAYS = {
+  '2026-01-01':'元旦','2026-01-02':'元旦','2026-01-03':'元旦',
+  '2026-02-16':'除夕','2026-02-17':'春节','2026-02-18':'春节','2026-02-19':'春节',
+  '2026-02-20':'春节','2026-02-21':'春节','2026-02-22':'春节',
+  '2026-04-04':'清明','2026-04-05':'清明','2026-04-06':'清明',
+  '2026-05-01':'劳动节','2026-05-02':'劳动节','2026-05-03':'劳动节','2026-05-04':'劳动节','2026-05-05':'劳动节',
+  '2026-06-19':'端午','2026-06-20':'端午','2026-06-21':'端午',
+  '2026-09-25':'中秋','2026-09-26':'中秋','2026-09-27':'中秋',
+  '2026-10-01':'国庆','2026-10-02':'国庆','2026-10-03':'国庆','2026-10-04':'国庆',
+  '2026-10-05':'国庆','2026-10-06':'国庆','2026-10-07':'国庆'
+};
+function holidayName(d){ return HOLIDAYS[localDateStr(d)] || null; }
+function isWeekend(d){ const w=bjDow(d); return w===0||w===6; }
+function dayOffInfo(d){
+  const h=holidayName(d);
+  if(h) return {off:true, label:h, type:'holiday'};
+  if(isWeekend(d)) return {off:true, label:bjDow(d)===6?'周六':'周日', type:'weekend'};
+  return {off:false};
+}
+function nextWorkday(d){
+  let n=new Date(d.getTime());
+  do{ n=new Date(n.getTime()+86400000); }while(dayOffInfo(n).off);
+  return n;
+}
+
+/* 数据变动后要高亮的任务（图表互动反馈） */
+let flashId = null;
+function fmtHM(d){ return _bjHMFmt.format(d); }
+function fmtDay(d){ const p=bjParts(d); const dw=['周日','周一','周二','周三','周四','周五','周六'][bjDow(d)]; return String(p.mo).padStart(2,'0')+'/'+String(p.da).padStart(2,'0')+dw; }
+function fmtMin(m){
+  m = Math.round(m);
+  if(m < 60) return m + '分';
+  const h = Math.floor(m/60), mm = m%60;
+  return h + '小时' + (mm ? mm + '分' : '');
+}
+function sameDay(iso, dateStr){ if(!iso) return false; return localDateStr(new Date(iso)) === dateStr; }
+function escapeHTML(str){ const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
+
+function normalizeEntries(entries){
+  (entries||[]).forEach(en=>{
+    if(!en.id) en.id = uid();
+    if(en.project===undefined) en.project='';
+    (en.steps||[]).forEach((s,i)=>{
+      if(!s.id) s.id = en.id + '_s' + i;
+      if(!s.status) s.status = s.done ? 'done' : 'pending';
+      if(s.included===undefined) s.included = true;
+      if(!s.color) s.color = STEP_PALETTE[i % STEP_PALETTE.length];
+      if(!s.minutes || s.minutes<1) s.minutes = 10;
+      if(s.actualStart===undefined) s.actualStart=null;
+      if(s.actualMinutes===undefined) s.actualMinutes=null;
+      if(!s.label) s.label = s.key || '未命名工序';
+    });
+  });
+  return entries||[];
+}
+
+function renderSetupScreen(){
+  document.getElementById('app').innerHTML = `
+    <div class="topbar"><div class="brand"><h1>生产计划甘特图看板</h1></div></div>
+    <div class="setup">
+      <h2>还差一步：接入 Supabase 云数据库（国内可直连）</h2>
+      <ol>
+        <li>打开 <a href="https://supabase.com" target="_blank">supabase.com</a>，用邮箱或 GitHub 免费注册</li>
+        <li>New project：起个名字、设个数据库密码，<b>Region 选 Singapore 或 Tokyo</b>（离国内近）</li>
+        <li>项目建好后，左侧 <b>SQL Editor</b> → New query → 粘贴下面这段并点 Run：</li>
+      </ol>
+      <pre style="background:#f1f4f8; border-radius:8px; padding:12px; font-size:11.5px; overflow:auto;">create table if not exists gantt_board (
+  id text primary key,
+  data jsonb,
+  updated_at timestamptz default now()
+);
+alter table gantt_board enable row level security;
+create policy "anon_select" on gantt_board for select to anon using (true);
+create policy "anon_insert" on gantt_board for insert to anon with check (true);
+create policy "anon_update" on gantt_board for update to anon using (true) with check (true);</pre>
+      <ol start="4">
+        <li>左侧齿轮 <b>Project Settings → API</b>：复制 <b>Project URL</b> 和 <b>anon public</b> key</li>
+        <li>打开本文件，把顶部 <code>SUPABASE_URL</code> 和 <code>SUPABASE_ANON_KEY</code> 换成你复制的值，保存并重新部署</li>
+      </ol>
+    </div>`;
+}
+
+/* ---------- Supabase 存取（纯 REST + 定时轮询，不依赖长连接推送） ---------- */
+const BOARD_ROW_URL = SUPABASE_URL.replace(/\/$/,'') + '/rest/v1/gantt_board';
+/* 自适应鉴权：默认 apikey + Authorization 两个头都带；遇到 401/403 自动切换为仅 apikey 再试 */
+let AUTH_MODE = 'both'; // 'both' | 'apikey'
+function sbHeaders(){
+  const h = {'apikey': SUPABASE_ANON_KEY, 'Content-Type':'application/json'};
+  if(AUTH_MODE === 'both') h['Authorization'] = 'Bearer ' + SUPABASE_ANON_KEY;
+  return h;
+}
+async function sbFetch(url, opts={}){
+  const extra = opts.headers || {};
+  let res = await fetch(url, {...opts, headers:{...sbHeaders(), ...extra}});
+  if(res.status===401 || res.status===403){
+    AUTH_MODE = (AUTH_MODE==='both') ? 'apikey' : 'both';
+    res = await fetch(url, {...opts, headers:{...sbHeaders(), ...extra}});
+  }
+  return res;
+}
+let lastRemoteStamp = null;
+let pollTimer = null;
+
+function applyRemote(row){
+  if(!row || !row.data) return;
+  const data = row.data;
+  if(data.templates && data.templates.length) state.templates = data.templates;
+  state.entries = normalizeEntries(data.entries || []);
+  if(data.title) state.title = data.title;
+  lastRemoteStamp = row.updated_at || null;
+}
+
+async function fetchBoard(){
+  const res = await sbFetch(BOARD_ROW_URL + '?id=eq.main&select=data,updated_at');
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const rows = await res.json();
+  return rows[0] || null;
+}
+
+let lastError = '';
+function friendlyError(e){
+  const m = String(e && e.message || e);
+  if(m.includes('404')) return '数据表未创建 → 去 Supabase 的 SQL Editor 运行建表 SQL（见文件底部注释）';
+  if(m.includes('401')||m.includes('403')) return '密钥无效或权限不足 → 检查 Publishable key 是否完整、RLS 策略是否已建';
+  if(m.includes('Failed to fetch')||m.includes('abort')||m.includes('Abort')) return '网络无法访问 supabase.co';
+  return m;
+}
+
+async function pollOnce(silent){
+  try{
+    const row = await fetchBoard();
+    const changed = row && row.updated_at !== lastRemoteStamp;
+    if(changed) applyRemote(row);
+    connectionStatus = 'ok'; lastError='';
+    if(!loaded){ loaded = true; render(); }
+    else if(changed) render();
+    else if(!silent) render();
+    return true;
+  }catch(e){
+    lastError = friendlyError(e);
+    if(loaded){ connectionStatus='cache'; render(); }
+    else { connectionStatus='error'; loaded=true; render(); }
+    if(!silent) showToast('❌ 无法连接云端：'+lastError);
+    return false;
+  }
+}
+
+function initSupabase(){
+  pollOnce(true);
+  pollTimer = setInterval(()=>pollOnce(true), 8000); // 每 8 秒自动同步一次
+}
+
+/* 手动同步：立即向云端拉取最新数据（也可用来验证网络） */
+window.__forceRefresh = async function(){
+  showToast('正在向云端拉取最新数据…');
+  const ok = await pollOnce(false);
+  if(ok) showToast('✅ 已从云端拉取最新数据。');
+};
+
+async function saveBoard(){
+  if(NEEDS_SETUP){ showToast('尚未配置云数据库，无法保存。'); return; }
+  render(); // 本地先行，界面立即反馈
+  const stamp = new Date().toISOString();
+  const body = JSON.stringify([{ id:'main', data: JSON.parse(JSON.stringify(state)), updated_at: stamp }]);
+  try{
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), 8000);
+    const res = await sbFetch(BOARD_ROW_URL + '?on_conflict=id', {
+      method:'POST',
+      headers: {'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body, signal: ctrl.signal
+    });
+    clearTimeout(t);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    lastRemoteStamp = stamp;
+    if(connectionStatus!=='ok'){ connectionStatus='ok'; render(); }
+  }catch(e){
+    connectionStatus='cache';
+    render();
+    showToast('⚠ 改动暂存在本页，未能上传云端（'+(e.name==='AbortError'?'超时':e.message)+'）——其他设备暂时看不到。网络恢复后点「🔄 手动同步」并重新保存。');
+  }
+}
+
+function showToast(msg){
+  const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),3200);
+}
+
+/* ---------- 排程与聚合 ---------- */
+function computeSchedule(entry){
+  let cursor=0; const out=[];
+  entry.steps.forEach(st=>{
+    if(st.included===false) return;
+    const dur=Math.max(1, st.minutes|0);
+    out.push({step:st, startMin:cursor, durMin:dur});
+    cursor+=dur;
+  });
+  return {segments:out, totalMin:cursor};
+}
+function entryStartDate(entry){ return new Date(entry.startISO); }
+function entryPlannedEndDate(entry){ const {totalMin}=computeSchedule(entry); return new Date(entryStartDate(entry).getTime()+totalMin*60000); }
+function entryActualEndDate(entry){
+  const now=new Date(); let latest=entryStartDate(entry);
+  entry.steps.forEach(st=>{
+    if(st.actualStart){
+      const s=new Date(st.actualStart);
+      const end = st.status==='done' ? new Date(s.getTime()+Math.max(1,st.actualMinutes||1)*60000) : now;
+      if(end>latest) latest=end;
+    }
+  });
+  return latest;
+}
+function pctDone(entry){
+  const inc=entry.steps.filter(s=>s.included!==false);
+  if(!inc.length) return 0;
+  return Math.round(inc.filter(s=>s.status==='done').length/inc.length*100);
+}
+/* 任务级进度信息：当前工序 / 下一步 / 完成信息 */
+function taskInfo(entry){
+  const steps = entry.steps.filter(s=>s.included!==false);
+  const done = steps.filter(s=>s.status==='done');
+  const pct = steps.length ? Math.round(done.length/steps.length*100) : 0;
+  const inProg = steps.find(s=>s.status==='in_progress');
+  const firstPending = steps.find(s=>s.status==='pending');
+  let currentText = null, nextLabel = null;
+  if(inProg){
+    currentText = '正在进行「'+inProg.label+'」';
+    const idx = steps.indexOf(inProg);
+    const nxt = steps.slice(idx+1).find(s=>s.status!=='done');
+    nextLabel = nxt ? nxt.label : null;
+  } else if(done.length && firstPending){
+    currentText = '已完成到「'+done[done.length-1].label+'」';
+    nextLabel = firstPending.label;
+  } else if(firstPending){
+    currentText = null;
+    nextLabel = firstPending.label;
+  }
+  const finished = steps.length>0 && steps.every(s=>s.status==='done');
+  let totalActual=0, finishTime=null;
+  steps.forEach(s=>{
+    if(s.actualStart && s.actualMinutes){
+      totalActual+=s.actualMinutes;
+      const e=new Date(new Date(s.actualStart).getTime()+s.actualMinutes*60000);
+      if(!finishTime||e>finishTime) finishTime=e;
+    }
+  });
+  const totalPlanned = steps.reduce((a,s)=>a+Math.max(1,s.minutes|0),0);
+  return {pct, currentText, nextLabel, finished, totalActual, finishTime, totalPlanned, stepsDone:done.length, stepsTotal:steps.length};
+}
+
+function boardRange(){
+  const now=new Date();
+  if(state.entries.length===0){
+    const s=bjMidnight(now);
+    const e=new Date(s); e.setDate(e.getDate()+2);
+    return {start:s, end:e};
+  }
+  let min=null, max=null;
+  state.entries.forEach(en=>{
+    const s=entryStartDate(en);
+    const e1=entryPlannedEndDate(en), e2=entryActualEndDate(en);
+    const e = e1>e2?e1:e2;
+    if(!min||s<min) min=s;
+    if(!max||e>max) max=e;
+  });
+  if(now<min) min=now;
+  if(now>max) max=now;
+  const start=bjMidnight(min);
+  const end=new Date(bjMidnight(max).getTime()+86400000);
+  if((end-start)<2*24*3600*1000){ end.setDate(start.getDate()+2); }
+  return {start, end};
+}
+
+/* 排序键：已完成任务用实际完成时刻；未完成用最早的实际开始时间；没动过的用计划开始时间。
+   这样看板从上到下就是"实际发生的先后顺序"。 */
+function taskSortKey(entry){
+  const info = taskInfo(entry);
+  if(info.finished && info.finishTime) return info.finishTime.getTime();
+  let earliest = null;
+  entry.steps.forEach(s=>{
+    if(s.included!==false && s.actualStart){
+      const t = new Date(s.actualStart).getTime();
+      if(earliest===null || t<earliest) earliest = t;
+    }
+  });
+  return earliest!==null ? earliest : new Date(entry.startISO).getTime();
+}
+
+function groupByProject(entries){
+  const groups={}; const order=[];
+  entries.forEach(en=>{
+    const key=(en.project||'').trim()||'（未分类项目）';
+    if(!groups[key]){ groups[key]=[]; order.push(key); }
+    groups[key].push(en);
+  });
+  const result = order.map(key=>({project:key, entries:groups[key].sort((a,b)=>taskSortKey(a)-taskSortKey(b))}));
+  /* 项目组也按组内最早时间排，先发生的项目在上面 */
+  result.sort((a,b)=>taskSortKey(a.entries[0])-taskSortKey(b.entries[0]));
+  return result;
+}
+
+/* ---------- 统计（面板用） ---------- */
+function computeStats(dateStr){
+  const now=new Date();
+  let actualMin=0, actualMinOfDone=0, plannedMinOfDone=0;
+  let doneSteps=0, inProgressSteps=0;
+  let plannedMinToday=0, totalStepsToday=0, doneStepsToday=0, tasksToday=0, tasksDoneToday=0;
+  const perProject={};
+  function proj(entry){
+    const key=(entry.project||'').trim()||'（未分类）';
+    if(!perProject[key]) perProject[key]={actual:0,planned:0,done:0,total:0};
+    return perProject[key];
+  }
+  state.entries.forEach(entry=>{
+    const included=entry.steps.filter(s=>s.included!==false);
+    if(sameDay(entry.startISO, dateStr)){
+      tasksToday++;
+      const p=proj(entry);
+      included.forEach(s=>{
+        plannedMinToday+=Math.max(1,s.minutes|0);
+        p.planned+=Math.max(1,s.minutes|0);
+        p.total++; totalStepsToday++;
+        if(s.status==='done'){ doneStepsToday++; p.done++; }
+      });
+      if(included.length && included.every(s=>s.status==='done')) tasksDoneToday++;
+    }
+    included.forEach(s=>{
+      if(s.actualStart && sameDay(s.actualStart, dateStr)){
+        const st=new Date(s.actualStart);
+        const mins = s.status==='done' ? Math.max(1,s.actualMinutes||1) : Math.max(1,(now-st)/60000);
+        actualMin+=mins; proj(entry).actual+=mins;
+        if(s.status==='done'){ doneSteps++; actualMinOfDone+=mins; plannedMinOfDone+=Math.max(1,s.minutes|0); }
+        if(s.status==='in_progress') inProgressSteps++;
+      }
+    });
+  });
+  const deviation = doneSteps ? Math.round(actualMinOfDone-plannedMinOfDone) : 0;
+  const completion = totalStepsToday ? Math.round(doneStepsToday/totalStepsToday*100) : 0;
+  return {actualMin, deviation, doneSteps, inProgressSteps, plannedMinToday, totalStepsToday, doneStepsToday, tasksToday, tasksDoneToday, completion, perProject};
+}
+
+/* ---------- 日报 / 周报 ---------- */
+function projTaskName(entry){
+  const p=(entry.project||'').trim();
+  return (p? p+' / ' : '') + entry.name;
+}
+function buildDailyReport(dateStr){
+  const s = computeStats(dateStr);
+  const ps=dateStr.split('-'); const d = bjMake(+ps[0],+ps[1],+ps[2],0,0);
+  const finishedToday=[], ongoing=[], notStarted=[];
+  state.entries.forEach(entry=>{
+    const info = taskInfo(entry);
+    if(info.stepsTotal===0) return;
+    if(info.finished){
+      if(info.finishTime && localDateStr(info.finishTime)===dateStr) finishedToday.push({entry, info});
+      return; // 更早完成的不再重复汇报
+    }
+    // 未完成任务：只要排产日期不晚于所选日期都纳入（含前几天遗留任务）
+    if(localDateStr(entryStartDate(entry)) <= dateStr){
+      if(info.pct===0 && !info.currentText) notStarted.push({entry, info});
+      else ongoing.push({entry, info});
+    }
+  });
+
+  const lines=[];
+  lines.push('📋 生产日报 · '+fmtDay(d));
+  lines.push('────────────');
+  lines.push('⏱ 当日实际投入：'+fmtMin(s.actualMin)+(s.inProgressSteps?'（含 '+s.inProgressSteps+' 道进行中）':''));
+  lines.push('✅ 当日完成任务 '+finishedToday.length+' 个；🔄 在办 '+ongoing.length+' 个；⏳ 待开始 '+notStarted.length+' 个');
+  if(finishedToday.length){
+    lines.push('');
+    lines.push('【今日完成】');
+    finishedToday.forEach(({entry,info})=>{
+      const diff=info.totalActual-info.totalPlanned;
+      const diffText = info.totalActual===0?'' : (diff===0?'，与预计持平':(diff>0?'，比预计多 '+fmtMin(diff):'，比预计省 '+fmtMin(-diff)));
+      lines.push('· '+projTaskName(entry)+' —— '+(info.finishTime?fmtHM(info.finishTime)+' 完成，':'')+'实际总用时 '+fmtMin(info.totalActual)+'（预计 '+fmtMin(info.totalPlanned)+diffText+'）');
+    });
+  }
+  if(ongoing.length){
+    lines.push('');
+    lines.push('【进行中（含前几日遗留）】');
+    ongoing.forEach(({entry,info})=>{
+      let t='· '+projTaskName(entry)+' —— 进度 '+info.pct+'%';
+      if(info.currentText) t+='，'+info.currentText;
+      if(info.nextLabel) t+='，下一步「'+info.nextLabel+'」';
+      lines.push(t);
+    });
+  }
+  if(notStarted.length){
+    lines.push('');
+    lines.push('【待开始】');
+    notStarted.forEach(({entry,info})=>{
+      lines.push('· '+projTaskName(entry)+'（'+fmtDay(entryStartDate(entry))+' '+fmtHM(entryStartDate(entry))+' 排产'+(info.nextLabel?'，首道工序「'+info.nextLabel+'」':'')+'）');
+    });
+  }
+  return lines.join('\n');
+}
+
+function buildWeeklyReport(){
+  const now=new Date();
+  let monday=bjMidnight(now);
+  monday=new Date(monday.getTime() - ((bjDow(now)+6)%7)*86400000);
+  const nextMonday=new Date(monday.getTime()+7*86400000);
+  const sunday=new Date(nextMonday.getTime()-1);
+
+  let weekActualMin=0;
+  state.entries.forEach(entry=>{
+    entry.steps.filter(s=>s.included!==false).forEach(s=>{
+      if(s.actualStart){
+        const st=new Date(s.actualStart);
+        if(st>=monday && st<nextMonday){
+          weekActualMin += s.status==='done' ? Math.max(1,s.actualMinutes||1) : Math.max(1,(now-st)/60000);
+        }
+      }
+    });
+  });
+
+  const finished=[], ongoing=[], notStarted=[];
+  state.entries.forEach(entry=>{
+    const info=taskInfo(entry);
+    if(info.stepsTotal===0) return;
+    if(info.finished){
+      if(info.finishTime && info.finishTime>=monday && info.finishTime<nextMonday) finished.push({entry,info});
+      return;
+    }
+    if(entryStartDate(entry) < nextMonday){
+      if(info.pct===0 && !info.currentText) notStarted.push({entry,info});
+      else ongoing.push({entry,info});
+    }
+  });
+
+  const p=n=>String(n).padStart(2,'0');
+  const mp=bjParts(monday), sp2=bjParts(sunday);
+  const rangeText = p(mp.mo)+'/'+p(mp.da)+'–'+p(sp2.mo)+'/'+p(sp2.da);
+  const lines=[];
+  lines.push('📊 生产周报 · '+rangeText);
+  lines.push('────────────');
+  lines.push('⏱ 本周实际投入：'+fmtMin(weekActualMin));
+  lines.push('✅ 完成任务 '+finished.length+' 个；🔄 进行中 '+ongoing.length+' 个；⏳ 待开始 '+notStarted.length+' 个');
+  if(finished.length){
+    lines.push('');
+    lines.push('【本周完成】');
+    finished.forEach(({entry,info})=>{
+      lines.push('· '+projTaskName(entry)+' —— 实际总用时 '+fmtMin(info.totalActual)+'（预计 '+fmtMin(info.totalPlanned)+'）');
+    });
+  }
+  if(ongoing.length){
+    lines.push('');
+    lines.push('【进行中】');
+    ongoing.forEach(({entry,info})=>{
+      let t='· '+projTaskName(entry)+' —— 进度 '+info.pct+'%';
+      if(info.currentText) t+='，'+info.currentText;
+      if(info.nextLabel) t+='，下一步「'+info.nextLabel+'」';
+      lines.push(t);
+    });
+  }
+  if(notStarted.length){
+    lines.push('');
+    lines.push('【待开始】');
+    notStarted.forEach(({entry})=>{
+      lines.push('· '+projTaskName(entry)+'（'+fmtDay(entryStartDate(entry))+' 排产）');
+    });
+  }
+  return lines.join('\n');
+}
+
+async function copyText(text, okMsg){
+  try{ await navigator.clipboard.writeText(text); showToast(okMsg); }
+  catch(e){ prompt('复制失败，请手动全选复制：', text); }
+}
+window.__copyReport = ()=>copyText(buildDailyReport(statsDate), '日报已复制，可直接粘贴到微信 / 钉钉群。');
+window.__copyWeekly = ()=>copyText(buildWeeklyReport(), '周报已复制，可直接粘贴发送。');
+window.__statsDateChange = function(v){ statsDate = v || localDateStr(new Date()); render(); };
+
+function statsPanelHTML(){
+  const s=computeStats(statsDate);
+  const devCls = s.doneSteps===0?'':(s.deviation>15?'bad':(s.deviation<-5?'good':''));
+  const devText = s.doneSteps===0?'—':(s.deviation===0?'±0':(s.deviation>0?'+'+fmtMin(s.deviation):'−'+fmtMin(-s.deviation)));
+  const projKeys=Object.keys(s.perProject).filter(k=>s.perProject[k].actual>0||s.perProject[k].planned>0);
+  const maxActual=Math.max(1,...projKeys.map(k=>s.perProject[k].actual));
+  const projRows = projKeys.length ? projKeys.map(k=>{
+    const p=s.perProject[k];
+    return `<tr><td>${escapeHTML(k)}</td><td class="num">${fmtMin(p.actual)}</td><td class="num">${fmtMin(p.planned)}</td><td class="num">${p.done}/${p.total}</td>
+      <td><div class="util-track"><div class="util-fill" style="width:${Math.round(p.actual/maxActual*100)}%"></div></div></td></tr>`;
+  }).join('') : `<tr><td colspan="5" style="color:var(--text-dim);">当日暂无数据</td></tr>`;
+
+  return `
+  <div class="stats-panel">
+    <div class="stats-head">
+      <h3>📊 工时统计</h3>
+      <input type="date" value="${statsDate}" onchange="__statsDateChange(this.value)">
+      <span class="spacer"></span>
+      <button class="btn primary" onclick="__copyReport()">📋 复制日报</button>
+      <button class="btn" onclick="__copyWeekly()">🗓 复制周报</button>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi good"><div class="k-label">当日实际投入工时</div><div class="k-value">${fmtMin(s.actualMin)}</div>
+        <div class="k-sub">${s.inProgressSteps? s.inProgressSteps+' 道工序进行中':'按实际开始/完成时间统计'}</div></div>
+      <div class="kpi"><div class="k-label">当日计划工作量</div><div class="k-value">${fmtMin(s.plannedMinToday)}</div>
+        <div class="k-sub">${s.tasksToday} 个任务排产</div></div>
+      <div class="kpi ${s.completion>=80?'good':(s.completion>=50?'warn':'')}"><div class="k-label">工序完成率</div><div class="k-value">${s.completion}%</div>
+        <div class="k-sub">${s.doneStepsToday} / ${s.totalStepsToday} 道工序</div></div>
+      <div class="kpi ${devCls}"><div class="k-label">预实偏差（已完成工序）</div><div class="k-value">${devText}</div>
+        <div class="k-sub">正=超时 · 负=提前</div></div>
+    </div>
+    <table class="proj-table">
+      <thead><tr><th>项目</th><th style="text-align:right;">实际投入</th><th style="text-align:right;">计划</th><th style="text-align:right;">工序</th><th>占比</th></tr></thead>
+      <tbody>${projRows}</tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------- 标题编辑 ---------- */
+window.__editTitle = function(){
+  const current = state.title || '生产计划甘特图看板';
+  const next = prompt('设置看板标题（所有人打开都会看到）：', current);
+  if(next===null) return;
+  const trimmed=next.trim();
+  if(!trimmed) return;
+  state.title=trimmed; document.title=trimmed;
+  saveBoard(); render();
+};
+
+/* ---------- 主渲染 ---------- */
+function render(){
+  if(NEEDS_SETUP){ renderSetupScreen(); return; }
+  const app=document.getElementById('app');
+  if(!loaded){ app.innerHTML='<div class="empty">连接云数据库中…</div>'; return; }
+  if(state.title) document.title=state.title;
+
+  const {start, end}=boardRange();
+  const now=new Date();
+  const todayStr=localDateStr(now);
+
+  /* 分日段：往日可折叠成窄条 */
+  const daySegs=[];
+  let c=new Date(start);
+  while(c<end){
+    const next=new Date(c.getTime()+86400000);
+    const segEnd = next<end ? next : end;
+    const hours = Math.round((segEnd-c)/3600000);
+    const isPast = localDateStr(c) < todayStr;
+    const collapsed = collapsePast && isPast;
+    daySegs.push({start:new Date(c), end:segEnd, hours, collapsed, width: collapsed?COLLAPSED_DAY_W:hours*zoomPx, x:0});
+    c=next;
+  }
+  let acc=0; daySegs.forEach(s=>{ s.x=acc; acc+=s.width; });
+  const timelineWidth=Math.max(600, acc);
+
+  function timeToX(t){
+    if(t<=daySegs[0].start) return 0;
+    for(const s of daySegs){
+      if(t<s.end){
+        return s.x + ((t-s.start)/(s.end-s.start))*s.width;
+      }
+    }
+    return acc;
+  }
+
+  const showNow = now>=start && now<=end;
+  const nowX = timeToX(now);
+
+  /* 表头（自绘，避免表格列对不齐） */
+  let headHTML='';
+  daySegs.forEach(s=>{
+    const off = dayOffInfo(s.start);
+    const badge = off.off ? `<span class="day-badge ${off.type}">${off.label}</span>` : '';
+    headHTML += `<div class="th-day ${s.collapsed?'collapsed':''}" style="left:${s.x}px; width:${s.width}px">${fmtDay(s.start)}${badge}${s.collapsed?' ▸':''}</div>`;
+    if(!s.collapsed){
+      const stepH = zoomPx>=45 ? 1 : 3;
+      for(let h=0; h<s.hours; h+=stepH){
+        const t=new Date(s.start.getTime()+h*3600000);
+        headHTML += `<div class="th-hour" style="left:${s.x+h*zoomPx}px">${String(t.getHours()).padStart(2,'0')}${zoomPx>=45?':00':''}</div>`;
+      }
+    }
+  });
+  if(showNow) headHTML += `<span class="now-chip" style="left:${nowX}px">▼ ${fmtHM(now)}</span>`;
+
+  /* 泳道底纹与网格（所有行复用同一段） */
+  let deco='';
+  daySegs.forEach(s=>{
+    deco += `<div class="gridline day" style="left:${s.x}px"></div>`;
+    const off = dayOffInfo(s.start);
+    if(off.off){
+      deco += `<div class="shade dayoff-${off.type}" style="left:${s.x}px; width:${s.width}px"></div>`;
+    }
+    if(s.collapsed){
+      if(!off.off) deco += `<div class="shade collapsed" style="left:${s.x}px; width:${s.width}px"></div>`;
+    } else {
+      for(let h=0; h<s.hours; h++){
+        const hh=new Date(s.start.getTime()+h*3600000).getHours();
+        if(!off.off && (hh<8||hh>=18)) deco += `<div class="shade" style="left:${s.x+h*zoomPx}px; width:${zoomPx}px"></div>`;
+        deco += `<div class="gridline" style="left:${s.x+h*zoomPx}px"></div>`;
+      }
+    }
+  });
+  if(showNow) deco += `<div class="now-line" style="left:${nowX}px"></div>`;
+
+  let rowsHTML='';
+  if(state.entries.length===0){
+    rowsHTML=`<tr><td class="namecol"></td><td class="timecol"></td><td class="timelinecell"><div class="empty" style="text-align:left;">
+      <b>看板上还没有任务</b>点击右上角「＋新建任务」，把一个膜材批次排入流程。</div></td></tr>`;
+  } else {
+    const groups=groupByProject(state.entries);
+    groups.forEach(group=>{
+      rowsHTML += `<tr class="group-row"><td class="namecol"><div class="group-label">${escapeHTML(group.project)}</div></td><td class="timecol"></td><td></td></tr>`;
+      group.entries.forEach(entry=>{
+        const {segments, totalMin}=computeSchedule(entry);
+        const info=taskInfo(entry);
+        const pct=info.pct;
+        const sX=timeToX(entryStartDate(entry));
+        const eX=timeToX(entryPlannedEndDate(entry));
+        const sWidth=Math.max(10, eX-sX);
+        const flashCls = entry.id===flashId ? ' flash-row' : '';
+
+        const pStart=entryStartDate(entry), pEnd=entryPlannedEndDate(entry);
+        const crossDay = localDateStr(pStart)!==localDateStr(pEnd);
+        const planText = fmtHM(pStart)+'–'+(crossDay?fmtDay(pEnd).slice(0,5)+' ':'')+fmtHM(pEnd);
+        const taskTimeCol = `<td class="timecol">
+          <div class="tc-line"><span class="tc-k">计划</span>${planText}</div>
+          ${info.finished&&info.finishTime?`<div class="tc-line done"><span class="tc-k">完成</span>${fmtHM(info.finishTime)}</div>`:''}
+        </td>`;
+
+        /* 一键推进：进行中→「完成当前」，否则→「开始下一道」；折叠状态下也能直接操作 */
+        let quickBtn='';
+        {
+          const incl = entry.steps.filter(x=>x.included!==false);
+          const running = incl.find(x=>x.status==='in_progress');
+          const nextP = incl.find(x=>x.status==='pending');
+          if(running){
+            quickBtn = `<button class="mini-btn quick finish" onclick="__toggleStep('${entry.id}','${running.id}')">✔ 完成「${escapeHTML(running.label)}」</button>`;
+          } else if(nextP){
+            quickBtn = `<button class="mini-btn quick start" onclick="__toggleStep('${entry.id}','${nextP.id}')">▶ 开始「${escapeHTML(nextP.label)}」</button>`;
+          }
+        }
+
+        let headLine='';
+        if(info.finished){
+          const diff=info.totalActual-info.totalPlanned;
+          const diffText = info.totalActual===0?'' : (diff===0?'，与预计持平':(diff>0?`，比预计多 ${fmtMin(diff)}`:`，比预计省 ${fmtMin(-diff)}`));
+          headLine = `<span class="done-badge">✔ 已完成</span> <span class="task-meta">${info.finishTime?fmtHM(info.finishTime)+' 完成 · ':''}实际总用时 ${fmtMin(info.totalActual)}（预计 ${fmtMin(info.totalPlanned)}${diffText}）</span>`;
+        } else {
+          let progressText = '';
+          if(info.currentText) progressText = ' · '+info.currentText+(info.nextLabel?'，下一步「'+info.nextLabel+'」':'');
+          headLine = `<span class="task-meta">${fmtDay(entryStartDate(entry))} ${fmtHM(entryStartDate(entry))} 开始 · 共${totalMin}分钟 · 完成 ${pct}%${progressText}</span>`;
+        }
+
+        const isCollapsed = collapsedTaskIds.has(entry.id);
+        const inclCount = entry.steps.filter(s=>s.included!==false).length;
+        rowsHTML += `<tr class="task-row${flashCls}${isCollapsed?' task-collapsed':''}">
+          <td class="namecol">
+            <div class="task-head">
+              <span class="task-caret" onclick="__toggleTask('${entry.id}')" title="${isCollapsed?'展开工序':'折叠工序'}">${isCollapsed?'▸':'▾'}</span>
+              <span class="task-name" style="cursor:pointer;" onclick="__toggleTask('${entry.id}')" title="点击${isCollapsed?'展开':'折叠'}工序">${escapeHTML(entry.name)}</span>
+              ${entry.temporary?'<span class="temp-badge">临时</span>':''}
+              ${headLine}
+            </div>
+            <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+            <div class="task-actions">
+              ${quickBtn}
+              <button class="mini-btn" onclick="__toggleTask('${entry.id}')">${isCollapsed?'▸ 展开 '+inclCount+' 道工序':'▾ 折叠工序'}</button>
+              <button class="mini-btn" onclick="__editEntry('${entry.id}')">＋加工序 / 编辑</button>
+              <button class="mini-btn" onclick="__duplicateEntry('${entry.id}')">复制到当前</button>
+              <button class="mini-btn danger" onclick="__deleteEntry('${entry.id}')">删除</button>
+            </div>
+          </td>
+          ${taskTimeCol}
+          <td class="timelinecell">
+            <div class="lane task-lane" style="width:${timelineWidth}px">
+              ${deco}
+              <div class="summary-bar" style="left:${sX}px; width:${sWidth}px"><div class="summary-fill" style="width:${pct}%"></div></div>
+            </div>
+          </td>
+        </tr>`;
+
+        if(!isCollapsed) segments.forEach(seg=>{
+          const st=seg.step;
+          const bStart=new Date(entryStartDate(entry).getTime()+seg.startMin*60000);
+          const bEnd=new Date(bStart.getTime()+seg.durMin*60000);
+          const x1=timeToX(bStart), x2=timeToX(bEnd);
+          const left=x1, width=Math.max(10, x2-x1-1);
+          const statusCls = st.status==='done'?'done':(st.status==='in_progress'?'inprogress':'pending');
+          const labelText=`${escapeHTML(st.label)} ${seg.durMin}分`;
+          const inBar = width >= (st.label.length*12+45);
+          const barLabel = inBar?`<span class="in-label">${labelText}</span>`:'';
+          const outLabel = inBar?'':`<span class="out-label" style="left:${left+width+7}px">${labelText}</span>`;
+
+          let baseline='';
+          let actualText='—'; let actualCls='dim';
+          if(st.actualStart){
+            const aS=new Date(st.actualStart);
+            const aMins = st.status==='done'?Math.max(1,st.actualMinutes||1):Math.max(1,(now-aS)/60000);
+            const aE=new Date(aS.getTime()+aMins*60000);
+            const ax1=timeToX(aS), ax2=timeToX(aE);
+            baseline=`<div class="baseline" style="left:${ax1}px; width:${Math.max(4,ax2-ax1)}px"
+              title="实际：${fmtHM(aS)} 开始${st.status==='done'?'，用时 '+Math.round(aMins)+' 分钟':'，进行中'}"></div>`;
+            actualText = fmtHM(aS)+'–'+(st.status==='done'?fmtHM(aE):'…');
+            actualCls = st.status==='done'?'done':'prog';
+          }
+          const stepTimeCol = `<td class="timecol" style="cursor:pointer;" onclick="__editTime('${entry.id}','${st.id}')" title="点击修改实际时间">
+            <div class="tc-line"><span class="tc-k">预计</span>${fmtHM(bStart)}–${fmtHM(bEnd)}</div>
+            <div class="tc-line ${actualCls}"><span class="tc-k">实际</span>${actualText}</div>
+          </td>`;
+
+          const statusIcon = st.status==='done'?'✓':(st.status==='in_progress'?'▸':'');
+          const statusBtn = st.status==='pending'
+            ? `<button class="step-btn start" onclick="__toggleStep('${entry.id}','${st.id}')">开始</button>`
+            : (st.status==='in_progress'
+              ? `<button class="step-btn finish" onclick="__toggleStep('${entry.id}','${st.id}')">完成</button>`
+              : `<button class="step-btn undo" onclick="__toggleStep('${entry.id}','${st.id}')" title="点击撤销">✓</button>`);
+
+          rowsHTML += `<tr class="step-row ${st.status==='done'?'is-done':''}${flashCls}">
+            <td class="namecol">
+              <div class="step-line">
+                <span class="step-status-ic ${statusCls}" onclick="__toggleStep('${entry.id}','${st.id}')" title="点击切换：待开始 → 进行中 → 完成">${statusIcon}</span>
+                <span class="step-label-text">${escapeHTML(st.label)}</span>
+                <span class="step-min">${st.minutes}分</span>
+                ${statusBtn}
+              </div>
+            </td>
+            ${stepTimeCol}
+            <td class="timelinecell">
+              <div class="lane" style="width:${timelineWidth}px">
+                ${deco}
+                <div class="bar ${statusCls}" style="left:${left}px; width:${width}px"
+                  title="${escapeHTML(st.label)}：预计 ${fmtHM(bStart)} 开始，${seg.durMin} 分钟"
+                  onclick="__toggleStep('${entry.id}','${st.id}')">${barLabel}</div>
+                ${outLabel}
+                ${baseline}
+              </div>
+            </td>
+          </tr>`;
+        });
+      });
+    });
+  }
+
+  const dotClass = connectionStatus==='ok'?'ok':(connectionStatus==='error'?'err':(connectionStatus==='cache'?'warn':''));
+  const statusText = connectionStatus==='ok' ? '已连接云端，多端实时同步中'
+    : connectionStatus==='cache' ? '⚠ 与云端通道受阻'+(lastError?'：'+lastError:'：当前显示本地数据，改动可能未上传')
+    : connectionStatus==='error' ? '❌ 云数据库连接失败'+(lastError?'：'+lastError:'')
+    : '连接中…';
+
+  document.getElementById('app').innerHTML = `
+    <div class="topbar">
+      <div class="brand">
+        <h1>${escapeHTML(state.title || '生产计划甘特图看板')} <button class="title-edit-btn" onclick="__editTitle()" title="编辑标题">✎</button></h1>
+      </div>
+      <div class="toolbar">
+        <div class="zoomset">
+          <button class="${zoomPx===30?'active':''}" onclick="__setZoom(30)">按天</button>
+          <button class="${zoomPx===60?'active':''}" onclick="__setZoom(60)">按时</button>
+          <button class="${zoomPx===120?'active':''}" onclick="__setZoom(120)">宽视图</button>
+          <button class="${zoomPx===240?'active':''}" onclick="__setZoom(240)">精细</button>
+          <button onclick="__gotoNow()" title="滚动到当前时间">📍现在</button>
+        </div>
+        <button class="btn ${collapsePast?'toggled':''}" onclick="__toggleCollapse()">${collapsePast?'▸ 往日已折叠':'▾ 展开显示往日'}</button>
+        <button class="btn" onclick="__openTemplates()">默认工序库</button>
+        <button class="btn primary" onclick="__openNew(false)">＋新建任务</button>
+        <button class="btn" onclick="__openNew(true)">＋临时插单</button>
+      </div>
+    </div>
+    <div class="subbar">
+      <span class="status"><span class="dot ${dotClass}"></span>${statusText}</span>
+      <button class="btn" style="padding:4px 11px; font-size:12px;" onclick="__forceRefresh()">🔄 手动同步</button>
+      <span class="legend">
+        <span class="lg"><i class="c-plan"></i>待开始</span>
+        <span class="lg"><i class="c-prog"></i>进行中</span>
+        <span class="lg"><i class="c-done"></i>已完成</span>
+        <span class="lg" style="color:#9aa5b1;">点圆圈/色条：第1下开始，第2下完成 ✓；点右侧「时间」栏文字可手动补填或修改实际时间</span>
+      </span>
+    </div>
+    ${statsPanelHTML()}
+    <div class="board-wrap">
+      <div class="board-scroll" id="scrollArea">
+        <table class="board">
+          <thead><tr>
+            <th class="corner namecol"></th>
+            <th class="corner timecol" style="font-size:11px; color:var(--text-dim); font-weight:600;">时间（预计 / 实际）</th>
+            <th style="padding:0;"><div class="tl-header" style="width:${timelineWidth}px">${headHTML}</div></th>
+          </tr></thead>
+          <tbody>${rowsHTML}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  flashId = null;
+
+  const sa=document.getElementById('scrollArea');
+  if(sa){
+    if(!didAutoScroll && showNow){
+      sa.scrollLeft=Math.max(0, nowX-250);
+      didAutoScroll=true;
+    } else {
+      /* 刷新/同步后保持你滚动到的位置，不再被拽回 */
+      sa.scrollLeft=savedScrollLeft;
+      sa.scrollTop=savedScrollTop;
+    }
+    sa.addEventListener('scroll', ()=>{ savedScrollLeft=sa.scrollLeft; savedScrollTop=sa.scrollTop; }, {passive:true});
+  }
+  window.__nowX = nowX;
+}
+
+/* 📍 一键定位到当前时间 */
+window.__gotoNow = function(){
+  const sa=document.getElementById('scrollArea');
+  if(sa && typeof window.__nowX==='number'){
+    sa.scrollTo({left:Math.max(0, window.__nowX-250), behavior:'smooth'});
+  }
+};
+
+window.__toggleCollapse = function(){ collapsePast=!collapsePast; render(); };
+window.__setZoom = function(px){ zoomPx=px; render(); };
+/* 折叠 / 展开某个任务的工序行 */
+window.__toggleTask = function(id){
+  if(collapsedTaskIds.has(id)) collapsedTaskIds.delete(id);
+  else collapsedTaskIds.add(id);
+  render();
+};
+
+/* ---------- 状态切换 ---------- */
+window.__toggleStep = async function(entryId, stepId){
+  const entry=state.entries.find(e=>e.id===entryId);
+  if(!entry) return;
+  const st=entry.steps.find(s=>s.id===stepId);
+  if(!st) return;
+  if(st.status==='pending'){
+    st.status='in_progress'; st.actualStart=new Date().toISOString();
+  } else if(st.status==='in_progress'){
+    st.status='done';
+    st.actualMinutes=Math.max(1, Math.round((new Date()-new Date(st.actualStart))/60000));
+  } else {
+    st.status='pending'; st.actualStart=null; st.actualMinutes=null;
+  }
+  flashId = entryId;
+  await saveBoard();
+};
+
+/* ---------- 手动记时 ---------- */
+function toLocalInputValue(d){
+  const q=bjParts(d); const p=n=>String(n).padStart(2,'0');
+  return q.y+'-'+p(q.mo)+'-'+p(q.da)+'T'+p(q.h)+':'+p(q.mi);
+}
+/* 把 datetime-local / date+time 输入值按"北京时间"解析成绝对时刻 */
+function parseBJ(v){
+  const m=v.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if(!m) return new Date(v);
+  return bjMake(+m[1],+m[2],+m[3],+m[4],+m[5]);
+}
+window.__editTime = function(entryId, stepId){
+  const entry=state.entries.find(e=>e.id===entryId);
+  if(!entry) return;
+  const st=entry.steps.find(s=>s.id===stepId);
+  if(!st) return;
+  const {segments}=computeSchedule(entry);
+  const segIdx=segments.findIndex(g=>g.step.id===stepId);
+  const seg=segIdx>=0?segments[segIdx]:null;
+  const plannedStart = seg ? new Date(entryStartDate(entry).getTime()+seg.startMin*60000) : new Date();
+  /* 上道工序的实际完成时间（已记录时，作为本道工序开始时间的默认值） */
+  let prevEnd=null, prevLabel='';
+  if(segIdx>0){
+    const pv=segments[segIdx-1].step;
+    if(pv.actualStart && pv.actualMinutes){
+      prevEnd=new Date(new Date(pv.actualStart).getTime()+Math.max(1,pv.actualMinutes)*60000);
+      prevLabel=pv.label;
+    }
+  }
+  const defStart = st.actualStart ? new Date(st.actualStart) : (prevEnd || plannedStart);
+  const defEnd = (st.actualStart && st.actualMinutes)
+    ? new Date(new Date(st.actualStart).getTime()+st.actualMinutes*60000)
+    : new Date(defStart.getTime()+Math.max(1,st.minutes)*60000);
+  const plannedEnd = new Date(plannedStart.getTime()+Math.max(1,st.minutes)*60000);
+  const planEndStr = (localDateStr(plannedStart)===localDateStr(plannedEnd) ? '' : fmtDay(plannedEnd)+' ') + fmtHM(plannedEnd);
+
+  const overlay=document.createElement('div');
+  overlay.className='overlay'; overlay.id='timeOverlay';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:430px;">
+      <h2>记录 / 修改实际时间</h2>
+      <div class="sub">${escapeHTML(st.label)} · 预计 ${st.minutes} 分钟。保存后该工序自动标记为已完成。${prevEnd&&!st.actualStart?'开始时间已默认填入上道工序的完成时间。':''}</div>
+      <div class="field"><label>实际开始时间</label><input type="datetime-local" id="tStart" value="${toLocalInputValue(defStart)}"></div>
+      <div class="field"><label>实际完成时间</label><input type="datetime-local" id="tEnd" value="${toLocalInputValue(defEnd)}"></div>
+      <div class="plan-fill">
+        <button type="button" id="tUsePlan">📋 与计划时间一致</button>
+        ${prevEnd?`<button type="button" id="tUsePrev" title="上道工序「${escapeHTML(prevLabel)}」的实际完成时间">⏫ 接上道完成（${fmtHM(prevEnd)}）</button>`:''}
+        <span class="plan-note">计划：${fmtDay(plannedStart)} ${fmtHM(plannedStart)} ～ ${planEndStr}（${fmtMin(Math.max(1,st.minutes))}）</span>
+      </div>
+      <div class="modal-actions">
+        ${st.actualStart?'<button class="btn" id="tClear" style="margin-right:auto; color:var(--red);">清除记录</button>':''}
+        <button class="btn" onclick="document.getElementById('timeOverlay').remove()">取消</button>
+        <button class="btn primary" id="tOk">保存</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',(e)=>{ if(e.target===overlay) overlay.remove(); });
+
+  /* 一键把实际开始/完成时间填成与计划一致（仍可再手动微调，点保存生效） */
+  document.getElementById('tUsePlan').onclick=()=>{
+    document.getElementById('tStart').value=toLocalInputValue(plannedStart);
+    document.getElementById('tEnd').value=toLocalInputValue(plannedEnd);
+  };
+  /* 一键衔接：开始时间 = 上道工序实际完成时间 */
+  const usePrev=document.getElementById('tUsePrev');
+  if(usePrev) usePrev.onclick=()=>{
+    document.getElementById('tStart').value=toLocalInputValue(prevEnd);
+    document.getElementById('tEnd').value=toLocalInputValue(new Date(prevEnd.getTime()+Math.max(1,st.minutes)*60000));
+  };
+
+  const clearBtn=document.getElementById('tClear');
+  if(clearBtn) clearBtn.onclick=async ()=>{
+    st.status='pending'; st.actualStart=null; st.actualMinutes=null;
+    flashId = entryId;
+    overlay.remove(); await saveBoard(); showToast('已清除该工序的实际时间记录。');
+  };
+  document.getElementById('tOk').onclick=async ()=>{
+    const sVal=document.getElementById('tStart').value;
+    const eVal=document.getElementById('tEnd').value;
+    if(!sVal||!eVal){ showToast('请填写开始和完成时间。'); return; }
+    const sD=parseBJ(sVal), eD=parseBJ(eVal);
+    if(eD<=sD){ showToast('完成时间需要晚于开始时间。'); return; }
+    st.actualStart=sD.toISOString();
+    st.actualMinutes=Math.max(1, Math.round((eD-sD)/60000));
+    st.status='done';
+    flashId = entryId;
+    overlay.remove();
+    await saveBoard();
+    showToast('已记录：实际用时 '+fmtMin(st.actualMinutes)+'。');
+  };
+};
+
+/* ---------- 任务的增删改 ---------- */
+function freshStepFromTemplate(t){
+  return {id:uid(), label:t.label, color:t.color, minutes:t.minutes, included:true, status:'pending', actualStart:null, actualMinutes:null};
+}
+function blankStep(){
+  return {id:uid(), label:'', color:nextColor(), minutes:10, included:true, status:'pending', actualStart:null, actualMinutes:null};
+}
+function defaultStepsForEntry(){ return state.templates.map(t=>freshStepFromTemplate(t)); }
+
+window.__openNew = function(temporary){
+  editingId=null;
+  openModal({id:null, project:'', name:'', startISO:new Date().toISOString(), temporary:!!temporary, steps:defaultStepsForEntry()});
+};
+window.__editEntry = function(id){
+  const entry=state.entries.find(e=>e.id===id);
+  if(!entry) return;
+  editingId=id;
+  openModal(JSON.parse(JSON.stringify(entry)));
+};
+window.__duplicateEntry = function(id){
+  const entry=state.entries.find(e=>e.id===id);
+  if(!entry) return;
+  editingId=null;
+  const copy=JSON.parse(JSON.stringify(entry));
+  copy.name=entry.name+'（副本）';
+  copy.startISO=new Date().toISOString();
+  copy.temporary=true;
+  copy.steps.forEach(s=>{ s.status='pending'; s.actualStart=null; s.actualMinutes=null; s.id=uid(); });
+  openModal(copy);
+};
+window.__deleteEntry = async function(id){
+  if(!confirm('确定要从看板上移除这条任务吗？')) return;
+  state.entries=state.entries.filter(e=>e.id!==id);
+  await saveBoard();
+};
+
+function stepRowHTML(s, idx){
+  return `<tr data-step-idx="${idx}">
+    <td><input type="checkbox" data-step-idx="${idx}" class="stepInclude" ${s.included!==false?'checked':''}></td>
+    <td><span class="swatch" style="background:${s.color}"></span></td>
+    <td><input type="text" class="stepLabel" data-step-idx="${idx}" placeholder="工序名称" value="${escapeHTML(s.label)}"></td>
+    <td><input type="number" min="1" class="stepMinutes" data-step-idx="${idx}" value="${s.minutes}"> 分</td>
+    <td>${s.status==='done'?'<span style="color:var(--green); font-size:11px;">已完成</span>':(s.status==='in_progress'?'<span style="color:var(--amber); font-size:11px;">进行中</span>':'')}</td>
+    <td><button type="button" class="del-row" data-del-idx="${idx}" title="删除此工序">×</button></td>
+  </tr>`;
+}
+
+function openModal(draft){
+  const overlay=document.createElement('div');
+  overlay.className='overlay'; overlay.id='modalOverlay';
+  let workingSteps=draft.steps.map(s=>({...s}));
+  let collapsedCount=0;   // 折叠隐藏的前 N 道工序（工序较多时自动折叠，方便编辑新工序）
+  let userExpanded=false; // 用户手动展开后，添加新工序时不再自动折叠
+
+  const d=new Date(draft.startISO);
+  const dateVal=localDateStr(d);
+  const timeVal=_bjHMFmt.format(d);
+
+  /* 项目名候选（已有项目一键选）+ 新建时默认带上上次用过的项目 */
+  const projNames=[...new Set(state.entries.map(e=>(e.project||'').trim()).filter(Boolean))];
+  const projOptions=projNames.map(n=>`<option value="${escapeHTML(n)}"></option>`).join('');
+  if(!editingId && !draft.project){
+    try{ draft.project=localStorage.getItem('gantt:lastProject')||''; }catch(_e){}
+  }
+
+  /* 每超过 5 道工序就多折叠一批：保持最多 5 行展开（6~10道折前5，11~15道折前10，以此类推） */
+  function autoCollapseCount(){
+    return workingSteps.length>5 ? Math.floor((workingSteps.length-1)/5)*5 : 0;
+  }
+  function stepsTableHTML(){
+    collapsedCount=Math.min(collapsedCount, autoCollapseCount());
+    let html='';
+    if(collapsedCount>0){
+      const names=workingSteps.slice(0,collapsedCount).map(s=>(s.label||'').trim()||'未命名').slice(0,3).join('、');
+      html+=`<tr class="collapse-bar"><td colspan="6"><button type="button" id="expandSteps">▸ 已折叠前 ${collapsedCount} 道工序（${escapeHTML(names)}${collapsedCount>3?' 等':''}）— 点击展开</button></td></tr>`;
+    } else if(workingSteps.length>5){
+      html+=`<tr class="collapse-bar"><td colspan="6"><button type="button" id="collapseSteps">▾ 折叠前 ${autoCollapseCount()} 道工序，方便编辑下方新工序</button></td></tr>`;
+    }
+    html+=workingSteps.map((s,idx)=> idx<collapsedCount ? '' : stepRowHTML(s,idx)).join('');
+    return html;
+  }
+  function quickAddHTML(){
+    return state.templates.map((t,i)=>`<button type="button" data-quick-idx="${i}"><span class="swatch" style="background:${t.color}"></span>${escapeHTML(t.label)}</button>`).join('')
+      + `<button type="button" id="addBlankStep">＋ 自定义工序</button>`
+      + `<button type="button" class="manage-tpl" id="manageTemplates" title="修改这些快速选择标签的名称和默认时长">✎ 修改默认工序</button>`;
+  }
+
+  overlay.innerHTML=`
+    <div class="modal">
+      <h2>${editingId?'编辑任务 / 添加工序':(draft.temporary?'添加临时插单任务':'新建任务')}</h2>
+      <div class="sub">点下方灰色标签可随时往任务里追加工序（已完成的工序不受影响）。</div>
+      <div class="row2">
+        <div class="field"><label>所属项目</label><input type="text" id="fProject" list="projList" placeholder="例如：B客户镜面" value="${escapeHTML(draft.project||'')}"><datalist id="projList">${projOptions}</datalist></div>
+        <div class="field"><label>任务名称</label><input type="text" id="fName" placeholder="例如：二次贴膜 * 6片" value="${escapeHTML(draft.name)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>开始日期</label><input type="date" id="fDate" value="${dateVal}"></div>
+        <div class="field"><label>开始时间</label><input type="time" id="fTime" value="${timeVal}"></div>
+      </div>
+      <div id="dateHint"></div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="fTemp" ${draft.temporary?'checked':''}>
+        <label for="fTemp">标记为临时 / 插单任务</label>
+      </div>
+      <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px; font-weight:600;">工序（点击标签快速添加）</label>
+      <div class="quickadd" id="quickAddArea">${quickAddHTML()}</div>
+      <table class="steps-table">
+        <thead><tr><th></th><th></th><th>工序名称</th><th>预计时长</th><th>状态</th><th></th></tr></thead>
+        <tbody id="stepsBody">${stepsTableHTML()}</tbody>
+      </table>
+      <div class="modal-actions">
+        ${editingId?'<button class="btn" id="fDelete" style="margin-right:auto; color:var(--red);">🗑 删除任务</button>':''}
+        <button class="btn" onclick="__closeModal()">取消</button>
+        <button class="btn primary" id="fSave">保存</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',(e)=>{ if(e.target===overlay) __closeModal(); });
+
+  /* 编辑已有任务时：可直接在弹窗里删除整个任务 */
+  const fDelete=document.getElementById('fDelete');
+  if(fDelete) fDelete.onclick=async ()=>{
+    if(!confirm('确定要删除整个任务及其所有工序记录吗？此操作不可撤销。')) return;
+    const idToDel=editingId;
+    state.entries=state.entries.filter(e=>e.id!==idToDel);
+    collapsedTaskIds.delete(idToDel);
+    __closeModal();
+    await saveBoard();
+    showToast('任务已删除。');
+  };
+
+  /* 节假日/周末提示：所选开始日期是休息日时给出顺延按钮 */
+  function updateDateHint(){
+    const box=document.getElementById('dateHint');
+    const v=document.getElementById('fDate').value;
+    if(!box || !v){ if(box) box.innerHTML=''; return; }
+    const d=parseBJ(v+'T00:00');
+    const off=dayOffInfo(d);
+    if(off.off){
+      box.innerHTML = `<div class="date-hint">⚠ 所选日期是 <b>${off.label}</b>${off.type==='holiday'?'（法定节假日）':'（周末）'}，确定要安排吗？
+        <button type="button" id="bumpDate">顺延到下个工作日</button></div>`;
+      document.getElementById('bumpDate').onclick=()=>{
+        document.getElementById('fDate').value = localDateStr(nextWorkday(d));
+        updateDateHint();
+      };
+    } else {
+      box.innerHTML='';
+    }
+  }
+  document.getElementById('fDate').addEventListener('change', updateDateHint);
+  updateDateHint();
+
+  /* 键盘便捷：Enter 保存（输入框内），Esc 关闭；打开即聚焦任务名 */
+  overlay.addEventListener('keydown', (e)=>{
+    if(e.key==='Escape'){ e.preventDefault(); __closeModal(); }
+    else if(e.key==='Enter' && e.target && e.target.tagName==='INPUT' && e.target.type!=='checkbox'){
+      e.preventDefault(); document.getElementById('fSave').click();
+    }
+  });
+  const nameInput=document.getElementById('fName');
+  if(nameInput && !nameInput.value) nameInput.focus(); else if(nameInput) nameInput.select();
+
+  function rerenderStepsBody(){
+    document.getElementById('stepsBody').innerHTML=stepsTableHTML();
+    bindStepRowEvents();
+  }
+  /* 关键修复：把表格里正在输入的内容实时写回 workingSteps，
+     这样添加/删除工序触发重新渲染时，未保存的编辑不会丢失 */
+  function syncStepsFromDOM(){
+    const body=document.getElementById('stepsBody');
+    if(!body) return;
+    body.querySelectorAll('.stepInclude').forEach(box=>{ const i=parseInt(box.dataset.stepIdx,10); if(workingSteps[i]) workingSteps[i].included=box.checked; });
+    body.querySelectorAll('.stepLabel').forEach(inp=>{ const i=parseInt(inp.dataset.stepIdx,10); if(workingSteps[i]) workingSteps[i].label=inp.value; });
+    body.querySelectorAll('.stepMinutes').forEach(inp=>{ const i=parseInt(inp.dataset.stepIdx,10); if(!workingSteps[i]) return; const v=parseInt(inp.value,10); if(!isNaN(v)&&v>=1) workingSteps[i].minutes=v; });
+  }
+  /* 事件委托绑在 tbody 上，重渲染 innerHTML 后依然有效 */
+  document.getElementById('stepsBody').addEventListener('input', syncStepsFromDOM);
+  document.getElementById('stepsBody').addEventListener('change', syncStepsFromDOM);
+
+  function bindStepRowEvents(){
+    document.querySelectorAll('#stepsBody .del-row').forEach(btn=>{
+      btn.onclick=()=>{
+        syncStepsFromDOM();
+        workingSteps.splice(parseInt(btn.dataset.delIdx,10),1);
+        rerenderStepsBody();
+      };
+    });
+    const ex=document.getElementById('expandSteps');
+    if(ex) ex.onclick=()=>{ syncStepsFromDOM(); userExpanded=true; collapsedCount=0; rerenderStepsBody(); };
+    const co=document.getElementById('collapseSteps');
+    if(co) co.onclick=()=>{ syncStepsFromDOM(); userExpanded=false; collapsedCount=autoCollapseCount(); rerenderStepsBody(); };
+  }
+  bindStepRowEvents();
+
+  /* 添加新工序：先同步已输入内容 → 追加 → 每超过 5 道自动多折叠一批 → 滚到新行并聚焦 */
+  function addStep(step, focusLabel){
+    syncStepsFromDOM();
+    workingSteps.push(step);
+    if(!userExpanded) collapsedCount=autoCollapseCount();
+    rerenderStepsBody();
+    const rows=document.querySelectorAll('#stepsBody tr[data-step-idx]');
+    const last=rows[rows.length-1];
+    if(last){
+      last.scrollIntoView({block:'nearest'});
+      if(focusLabel){ const inp=last.querySelector('.stepLabel'); if(inp) inp.focus(); }
+    }
+  }
+  function bindQuickAdd(){
+    document.querySelectorAll('#quickAddArea button[data-quick-idx]').forEach(btn=>{
+      btn.onclick=()=>addStep(freshStepFromTemplate(state.templates[parseInt(btn.dataset.quickIdx,10)]), false);
+    });
+    document.getElementById('addBlankStep').onclick=()=>addStep(blankStep(), true);
+    const mg=document.getElementById('manageTemplates');
+    if(mg) mg.onclick=()=>__openTemplates();
+  }
+  bindQuickAdd();
+
+  /* 默认工序库保存后，实时刷新本弹窗的快速选择标签（弹窗关闭后监听自动清理） */
+  const onTplUpdated=()=>{
+    if(!document.body.contains(overlay)){ document.removeEventListener('gantt-templates-updated', onTplUpdated); return; }
+    const area=document.getElementById('quickAddArea');
+    if(area){ area.innerHTML=quickAddHTML(); bindQuickAdd(); }
+  };
+  document.addEventListener('gantt-templates-updated', onTplUpdated);
+
+  document.getElementById('fSave').onclick=async ()=>{
+    const project=document.getElementById('fProject').value.trim();
+    try{ if(project) localStorage.setItem('gantt:lastProject', project); }catch(_e){}
+    const name=document.getElementById('fName').value.trim();
+    if(!name){ showToast('请输入任务名称。'); return; }
+    const date=document.getElementById('fDate').value;
+    const time=document.getElementById('fTime').value||'00:00';
+    const startISO=parseBJ(`${date}T${time}`).toISOString();
+    const temporary=document.getElementById('fTemp').checked;
+
+    syncStepsFromDOM(); // 折叠中的行也保留其最后一次输入的值
+    const steps=workingSteps.map(s=>({
+      ...s,
+      included: s.included!==false,
+      label: (s.label||'').trim()||'未命名工序',
+      minutes: Math.max(1, parseInt(s.minutes,10)||1),
+    })).filter(s=>s.label);
+
+    if(editingId){
+      const entry=state.entries.find(e=>e.id===editingId);
+      Object.assign(entry, {project, name, startISO, temporary, steps});
+      collapsedTaskIds.delete(editingId); // 编辑后自动展开，方便查看改动
+      flashId = editingId;
+    } else {
+      const newId = uid();
+      state.entries.forEach(e=>collapsedTaskIds.add(e.id)); // 新建任务时折叠旧任务，聚焦新任务
+      state.entries.push({id:newId, project, name, startISO, temporary, steps});
+      collapsedTaskIds.delete(newId);
+      flashId = newId;
+    }
+    await saveBoard();
+    __closeModal();
+    showToast('已保存到云端。');
+  };
+}
+window.__closeModal = function(){
+  const o=document.getElementById('modalOverlay');
+  if(o) o.remove();
+  editingId=null;
+};
+
+/* ---------- 默认工序库 ---------- */
+window.__openTemplates = function(){
+  const overlay=document.createElement('div');
+  overlay.className='overlay'; overlay.id='templatesOverlay';
+  let working=state.templates.map(t=>({...t}));
+
+  function rowsHTML(){
+    return working.map((t,idx)=>`<tr>
+      <td><span class="swatch" style="background:${t.color}"></span></td>
+      <td><input type="text" class="tLabel" data-idx="${idx}" value="${escapeHTML(t.label)}"></td>
+      <td><input type="number" min="1" class="tMinutes" data-idx="${idx}" value="${t.minutes}"> 分</td>
+      <td><button type="button" class="del-row" data-del-idx="${idx}">×</button></td>
+    </tr>`).join('');
+  }
+
+  overlay.innerHTML=`
+    <div class="modal">
+      <h2>默认工序库</h2>
+      <div class="sub">用于新建任务时一键添加，修改这里不影响看板上已排好的任务。</div>
+      <table class="steps-table">
+        <thead><tr><th></th><th>工序名称</th><th>默认时长</th><th></th></tr></thead>
+        <tbody id="tBody">${rowsHTML()}</tbody>
+      </table>
+      <div style="margin-top:8px;"><button type="button" class="btn" id="addTemplate">＋ 添加模板工序</button></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="__closeTemplates()">取消</button>
+        <button class="btn primary" id="tSave">保存模板</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',(e)=>{ if(e.target===overlay) __closeTemplates(); });
+  overlay.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'){ e.preventDefault(); __closeTemplates(); }
+    else if(e.key==='Enter' && e.target && e.target.tagName==='INPUT'){ e.preventDefault(); document.getElementById('tSave').click(); }
+  });
+
+  function rerender(){ document.getElementById('tBody').innerHTML=rowsHTML(); bind(); }
+  /* 同样的修复：先把正在输入的内容写回 working，再重渲染，避免编辑丢失 */
+  function syncFromDOM(){
+    const body=document.getElementById('tBody');
+    if(!body) return;
+    body.querySelectorAll('.tLabel').forEach(inp=>{ const i=parseInt(inp.dataset.idx,10); if(working[i]) working[i].label=inp.value; });
+    body.querySelectorAll('.tMinutes').forEach(inp=>{ const i=parseInt(inp.dataset.idx,10); if(!working[i]) return; const v=parseInt(inp.value,10); if(!isNaN(v)&&v>=1) working[i].minutes=v; });
+  }
+  document.getElementById('tBody').addEventListener('input', syncFromDOM);
+  function bind(){
+    document.querySelectorAll('#tBody .del-row').forEach(btn=>{
+      btn.onclick=()=>{ syncFromDOM(); working.splice(parseInt(btn.dataset.delIdx,10),1); rerender(); };
+    });
+  }
+  bind();
+  document.getElementById('addTemplate').onclick=()=>{
+    syncFromDOM();
+    working.push({label:'新工序', color:nextColor(), minutes:10});
+    rerender();
+    const inputs=document.querySelectorAll('#tBody .tLabel');
+    const last=inputs[inputs.length-1];
+    if(last){ last.scrollIntoView({block:'nearest'}); last.focus(); last.select(); }
+  };
+  document.getElementById('tSave').onclick=async ()=>{
+    syncFromDOM();
+    working.forEach(t=>{
+      t.label=(t.label||'').trim()||'未命名工序';
+      t.minutes=Math.max(1, parseInt(t.minutes,10)||10);
+    });
+    state.templates=working;
+    await saveBoard();
+    __closeTemplates();
+    /* 通知打开中的任务弹窗刷新快速选择标签 */
+    document.dispatchEvent(new CustomEvent('gantt-templates-updated'));
+    showToast('工序模板已更新，快速选择标签已同步。');
+  };
+};
+window.__closeTemplates = function(){
+  const o=document.getElementById('templatesOverlay');
+  if(o) o.remove();
+};
+
+setInterval(()=>{ if(loaded && !NEEDS_SETUP) render(); }, 30000);
+if(NEEDS_SETUP){ render(); } else { initSupabase(); render(); }
+
+/* ======================================================================
+   Supabase 建表 SQL（在 Supabase 控制台 → SQL Editor 里运行一次）：
+
+   create table if not exists gantt_board (
+     id text primary key,
+     data jsonb,
+     updated_at timestamptz default now()
+   );
+   alter table gantt_board enable row level security;
+   create policy "anon_select" on gantt_board for select to anon using (true);
+   create policy "anon_insert" on gantt_board for insert to anon with check (true);
+   create policy "anon_update" on gantt_board for update to anon using (true) with check (true);
+   ====================================================================== */
+</script>
+</body>
+</html>
