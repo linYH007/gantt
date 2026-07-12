@@ -186,7 +186,25 @@
   .bar.done{background:var(--green); color:#fff;}
   .bar .in-label{overflow:hidden; text-overflow:ellipsis;}
   .out-label{position:absolute; top:14px; font-size:11px; font-weight:600; color:var(--text-dim); white-space:nowrap; pointer-events:none;}
-  .baseline{position:absolute; top:34px; height:4px; border-radius:2px; background:#64748b; opacity:.75;}
+  /* 计划条：蓝色描边空心（上层）；实际条：绿色实心（下层），预计/实际颜色分明 */
+  .lane{height:44px;}
+  .bar{position:absolute; top:5px; height:15px; border-radius:8px; cursor:pointer; display:flex; align-items:center; padding:0 7px; font-size:10px; white-space:nowrap; overflow:hidden;}
+  .bar.pending{background:#eaf2fd; border:1.5px solid var(--blue); color:#2563b0;}
+  .bar.inprogress{background:#fff4e0; border:1.5px solid var(--amber); color:#a86a00;}
+  .bar.done{background:#eaf2fd; border:1.5px solid #9dbde8; color:#5a7cae;}
+  .bar .in-label{overflow:hidden; text-overflow:ellipsis;}
+  /* 实际条 */
+  .actbar{position:absolute; top:23px; height:15px; border-radius:8px; cursor:pointer; background:var(--green);
+    display:flex; align-items:center; padding:0 7px; font-size:10px; color:#fff; white-space:nowrap; overflow:hidden;
+    box-shadow:0 1px 2px rgba(52,180,111,.35);}
+  .actbar.running{background:var(--amber); box-shadow:0 1px 2px rgba(245,166,35,.4);}
+  .lane-tag{position:absolute; left:2px; font-size:8px; color:#aab4c0; pointer-events:none;}
+  .lane-tag.plan{top:6px;}
+  .lane-tag.act{top:24px;}
+  .bar:hover, .actbar:hover{filter:brightness(1.05); outline:2px solid rgba(74,144,226,.4);}
+  /* 被定位高亮的任务行 */
+  tr.focus-row td{animation:focusFlash 1.6s ease;}
+  @keyframes focusFlash{0%,40%{background:#fff3c4;}100%{background:transparent;}}
 
   .empty{padding:70px 20px; text-align:center; color:var(--text-dim);}
   .empty b{color:var(--text); display:block; font-size:16px; margin-bottom:6px;}
@@ -240,6 +258,22 @@
   ::-webkit-scrollbar-thumb{background:#c8d1dc; border-radius:5px;}
   ::-webkit-scrollbar-thumb:hover{background:#b3bfcc;}
   .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#1e2733; color:#fff; padding:10px 18px; border-radius:9px; font-size:12.5px; z-index:80; box-shadow:0 6px 20px rgba(16,24,40,.3);}
+  /* 项目组折叠 + 计数 */
+  .group-caret{display:inline-block; width:14px; color:var(--blue);}
+  .group-count{font-size:11px; color:#9aa5b1; font-weight:400;}
+  /* 折叠任务卡片 */
+  .task-collapsed-card .cc-line{display:flex; align-items:center; gap:7px;}
+  .cc-pct{font-size:11px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace;}
+  .task-collapsed-card{background:#fafcff;}
+  /* 项目列表面板 */
+  .pl-body{max-height:60vh; overflow:auto;}
+  .pl-group{margin-bottom:14px;}
+  .pl-gtitle{font-size:13px; font-weight:700; color:#2c5aa0; padding:6px 0 4px; border-bottom:1px solid var(--line); margin-bottom:4px;}
+  .pl-task{display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:7px; cursor:pointer;}
+  .pl-task:hover{background:#eef4fb;}
+  .pl-name{flex:1; font-size:13px;}
+  .pl-status{font-size:11.5px;}
+  .pl-pct{font-size:11px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; width:34px; text-align:right;}
   /* 筛选条 */
   .filterbar{display:flex; align-items:center; gap:10px; padding:8px 20px 0; flex-wrap:wrap;}
   .filterchips{display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel);}
@@ -405,6 +439,8 @@ function nextWorkday(d){
 
 /* 数据变动后要高亮的任务（图表互动反馈） */
 let flashId = null;
+let collapsedGroups = new Set();   // 折叠起来的项目（点项目名展开看任务列表）
+let focusTaskId = null;            // 本次要高亮定位的任务
 function fmtHM(d){ return _bjHMFmt.format(d); }
 function fmtDay(d){ const p=bjParts(d); const dw=['周日','周一','周二','周三','周四','周五','周六'][bjDow(d)]; return String(p.mo).padStart(2,'0')+'/'+String(p.da).padStart(2,'0')+dw; }
 function fmtMin(m){
@@ -651,7 +687,7 @@ function taskInfo(entry){
     }
   });
   const totalPlanned = steps.reduce((a,s)=>a+Math.max(1,s.minutes|0),0);
-  return {pct, currentText, nextLabel, finished, totalActual, finishTime, totalPlanned, stepsDone:done.length, stepsTotal:steps.length};
+  return {pct, currentText, nextLabel, finished, anyRunning:!!inProg, totalActual, finishTime, totalPlanned, stepsDone:done.length, stepsTotal:steps.length};
 }
 
 function boardRange(){
@@ -680,8 +716,8 @@ function boardRange(){
 /* 排序键：已完成任务用实际完成时刻；未完成用最早的实际开始时间；没动过的用计划开始时间。
    这样看板从上到下就是"实际发生的先后顺序"。 */
 function taskSortKey(entry){
-  const info = taskInfo(entry);
-  if(info.finished && info.finishTime) return info.finishTime.getTime();
+  /* 严格按"实际"发生先后排：优先用最早的实际开始时间；
+     从未开始的任务用计划开始时间兜底，排在有实际记录的之后（+一个大偏移保证靠后）。 */
   let earliest = null;
   entry.steps.forEach(s=>{
     if(s.included!==false && s.actualStart){
@@ -689,7 +725,8 @@ function taskSortKey(entry){
       if(earliest===null || t<earliest) earliest = t;
     }
   });
-  return earliest!==null ? earliest : new Date(entry.startISO).getTime();
+  if(earliest!==null) return earliest;
+  return new Date(entry.startISO).getTime() + 1e15; // 未开始的排到所有已开始之后，内部再按计划时间
 }
 
 function groupByProject(entries){
@@ -1053,7 +1090,12 @@ function render(){
   } else {
     const groups=groupByProject(visibleEntries);
     groups.forEach(group=>{
-      rowsHTML += `<tr class="group-row"><td class="namecol"><div class="group-label">${escapeHTML(group.project)}</div></td><td class="timecol"></td><td></td></tr>`;
+      const gCollapsed = collapsedGroups.has(group.project);
+      const gCaret = gCollapsed ? '▸' : '▾';
+      const gCount = group.entries.length;
+      const gDone = group.entries.filter(e=>taskInfo(e).finished).length;
+      rowsHTML += `<tr class="group-row" data-group="${escapeHTML(group.project)}"><td class="namecol"><div class="group-label" style="cursor:pointer;" onclick="__toggleGroup('${escapeHTML(group.project).replace(/'/g,"\\\\'")}')"><span class="group-caret">${gCaret}</span> ${escapeHTML(group.project)} <span class="group-count">${gDone}/${gCount} 任务</span></div></td><td class="timecol"></td><td></td></tr>`;
+      if(gCollapsed) return;
       group.entries.forEach(entry=>{
         const {segments, totalMin}=computeSchedule(entry);
         const info=taskInfo(entry);
@@ -1097,18 +1139,47 @@ function render(){
 
         const isCollapsed = collapsedTaskIds.has(entry.id);
         const inclCount = entry.steps.filter(s=>s.included!==false).length;
-        rowsHTML += `<tr class="task-row${flashCls}${isCollapsed?' task-collapsed':''}">
+        const focusCls = entry.id===focusTaskId ? ' focus-row' : '';
+        if(isCollapsed){
+          /* 折叠态：整块收成一张紧凑单行卡片，右侧时间栏显示计划/完成时间 */
+          const doneMark = info.finished ? '<span class="temp-badge" style="background:var(--green)">已完成</span>' : (info.anyRunning?'<span class="temp-badge" style="background:var(--amber)">进行中</span>':'');
+          const collapsedTimeCol = `<td class="timecol">
+            <div class="tc-line"><span class="tc-k">计划</span>${fmtHM(entryStartDate(entry))}–${fmtHM(entryPlannedEndDate(entry))}</div>
+            ${info.finished&&info.finishTime?`<div class="tc-line done"><span class="tc-k">完成</span>${fmtHM(info.finishTime)}</div>`:`<div class="tc-line dim"><span class="tc-k">进度</span>${pct}%</div>`}
+          </td>`;
+          rowsHTML += `<tr class="task-row task-collapsed-card${flashCls}${focusCls}" data-task-id="${entry.id}">
+            <td class="namecol">
+              <div class="cc-line">
+                <span class="task-caret" onclick="__toggleTask('${entry.id}')" title="展开工序">▸</span>
+                <span class="task-name" style="cursor:pointer; flex:1;" onclick="__toggleTask('${entry.id}')">${escapeHTML(entry.name)}</span>
+                ${entry.temporary?'<span class="temp-badge">临时</span>':''}
+                ${doneMark}
+                <span class="cc-pct">${pct}%</span>
+              </div>
+              <div class="progress-track" style="margin-top:5px;"><div class="progress-fill" style="width:${pct}%"></div></div>
+            </td>
+            ${collapsedTimeCol}
+            <td class="timelinecell">
+              <div class="lane task-lane" style="width:${timelineWidth}px">
+                ${deco}
+                <div class="summary-bar" style="left:${sX}px; width:${sWidth}px" onclick="__focusTask('${entry.id}')"><div class="summary-fill" style="width:${pct}%"></div></div>
+              </div>
+            </td>
+          </tr>`;
+          return;
+        }
+        rowsHTML += `<tr class="task-row${flashCls}${focusCls}" data-task-id="${entry.id}">
           <td class="namecol">
             <div class="task-head">
-              <span class="task-caret" onclick="__toggleTask('${entry.id}')" title="${isCollapsed?'展开工序':'折叠工序'}">${isCollapsed?'▸':'▾'}</span>
-              <span class="task-name" style="cursor:pointer;" onclick="__toggleTask('${entry.id}')" title="点击${isCollapsed?'展开':'折叠'}工序">${escapeHTML(entry.name)}</span>
+              <span class="task-caret" onclick="__toggleTask('${entry.id}')" title="折叠工序">▾</span>
+              <span class="task-name" style="cursor:pointer;" onclick="__toggleTask('${entry.id}')" title="点击折叠工序">${escapeHTML(entry.name)}</span>
               ${entry.temporary?'<span class="temp-badge">临时</span>':''}
               ${headLine}
             </div>
             <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
             <div class="task-actions">
               ${quickBtn}
-              <button class="mini-btn" onclick="__toggleTask('${entry.id}')">${isCollapsed?'▸ 展开 '+inclCount+' 道工序':'▾ 折叠工序'}</button>
+              <button class="mini-btn" onclick="__toggleTask('${entry.id}')">▾ 折叠工序</button>
               <button class="mini-btn" onclick="__editEntry('${entry.id}')">＋加工序 / 编辑</button>
               <button class="mini-btn" onclick="__duplicateEntry('${entry.id}')">复制到当前</button>
               <button class="mini-btn danger" onclick="__deleteEntry('${entry.id}')">删除</button>
@@ -1123,7 +1194,7 @@ function render(){
           </td>
         </tr>`;
 
-        if(!isCollapsed) segments.forEach(seg=>{
+        segments.forEach(seg=>{
           const st=seg.step;
           const bStart=new Date(entryStartDate(entry).getTime()+seg.startMin*60000);
           const bEnd=new Date(bStart.getTime()+seg.durMin*60000);
@@ -1142,8 +1213,9 @@ function render(){
             const aMins = st.status==='done'?Math.max(1,st.actualMinutes||1):Math.max(1,(now-aS)/60000);
             const aE=new Date(aS.getTime()+aMins*60000);
             const ax1=timeToX(aS), ax2=timeToX(aE);
-            baseline=`<div class="baseline" style="left:${ax1}px; width:${Math.max(4,ax2-ax1)}px"
-              title="实际：${fmtHM(aS)} 开始${st.status==='done'?'，用时 '+Math.round(aMins)+' 分钟':'，进行中'}"></div>`;
+            baseline=`<div class="actbar ${st.status==='in_progress'?'running':''}" style="left:${ax1}px; width:${Math.max(10,ax2-ax1)}px"
+              onclick="event.stopPropagation(); __focusTask('${entry.id}')"
+              title="实际：${fmtHM(aS)} 开始${st.status==='done'?'，用时 '+Math.round(aMins)+' 分钟':'，进行中'}">${(ax2-ax1)>=34?'<span class="in-label">'+escapeHTML(st.label)+'</span>':''}</div>`;
             if(st.status==='done'){
               actualText = fmtHM(aS)+'–'+fmtHM(aE);
               actualCls = 'done';
@@ -1178,9 +1250,10 @@ function render(){
             <td class="timelinecell">
               <div class="lane" style="width:${timelineWidth}px">
                 ${deco}
+                ${seg.startMin===0?'<span class="lane-tag plan">计划</span><span class="lane-tag act">实际</span>':''}
                 <div class="bar ${statusCls}" style="left:${left}px; width:${width}px"
-                  title="${escapeHTML(st.label)}：预计 ${fmtHM(bStart)} 开始，${seg.durMin} 分钟"
-                  onclick="__toggleStep('${entry.id}','${st.id}')">${barLabel}</div>
+                  title="${escapeHTML(st.label)}：预计 ${fmtHM(bStart)} 开始，${seg.durMin} 分钟（点击定位任务）"
+                  onclick="__focusTask('${entry.id}')">${barLabel}</div>
                 ${outLabel}
                 ${baseline}
               </div>
@@ -1212,6 +1285,7 @@ function render(){
           <button onclick="__toggleWorkHours()" title="切换时间轴显示范围">${workHoursOnly?'⏰ 8-20点':'🌐 全天'}</button>
         </div>
         <button class="btn ${collapsePast?'toggled':''}" onclick="__toggleCollapse()">${collapsePast?'▸ 往日已折叠':'▾ 展开显示往日'}</button>
+        <button class="btn" onclick="__openProjectList()">📁 项目列表</button>
         <button class="btn" onclick="__openTemplates()">默认工序库</button>
         <button class="btn primary" onclick="__openNew(false)">＋新建任务</button>
         <button class="btn" onclick="__openNew(true)">＋临时插单</button>
@@ -1288,10 +1362,79 @@ window.__toggleWorkHours = function(){
 };
 window.__setZoom = function(px){ zoomPx=px; render(); };
 /* 折叠 / 展开某个任务的工序行 */
+window.__toggleGroup = function(proj){
+  if(collapsedGroups.has(proj)) collapsedGroups.delete(proj);
+  else collapsedGroups.add(proj);
+  render();
+};
+
+/* 📁 项目列表：列出各项目下的任务及完成时间，点击定位 */
+window.__openProjectList = function(){
+  const groups = groupByProject(state.entries);
+  const body = groups.map(g=>{
+    const rows = g.entries.map(en=>{
+      const info = taskInfo(en);
+      const status = info.finished ? `<span style="color:var(--green)">✓ ${info.finishTime?fmtHM(info.finishTime)+' 完成':'已完成'}</span>`
+        : (info.anyRunning ? '<span style="color:var(--amber)">● 进行中</span>' : `<span style="color:#9aa5b1">待开始 · 计划 ${fmtHM(entryStartDate(en))}</span>`);
+      return `<div class="pl-task" onclick="__closeProjectList(); __focusTask('${en.id}')">
+        <span class="pl-name">${escapeHTML(en.name)}</span>
+        <span class="pl-status">${status}</span>
+        <span class="pl-pct">${info.pct}%</span>
+      </div>`;
+    }).join('');
+    const gDone = g.entries.filter(e=>taskInfo(e).finished).length;
+    return `<div class="pl-group"><div class="pl-gtitle">${escapeHTML(g.project)} <span class="group-count">${gDone}/${g.entries.length}</span></div>${rows}</div>`;
+  }).join('') || '<div style="color:#9aa5b1; padding:20px;">还没有任务</div>';
+
+  const overlay=document.createElement('div');
+  overlay.className='overlay'; overlay.id='projListOverlay';
+  overlay.innerHTML=`<div class="modal" style="max-width:560px;">
+    <h2>📁 项目列表</h2>
+    <div class="sub">按项目查看任务与完成时间，点任意任务即定位到看板对应位置。</div>
+    <input type="search" id="plSearch" placeholder="🔍 搜索任务 / 项目…" style="width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 11px; font-size:13px; margin-bottom:10px;">
+    <div class="pl-body" id="plBody">${body}</div>
+    <div class="modal-actions"><button class="btn" onclick="__closeProjectList()">关闭</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',(e)=>{ if(e.target===overlay) __closeProjectList(); });
+  const sb=document.getElementById('plSearch');
+  sb.addEventListener('input',()=>{
+    const q=sb.value.toLowerCase();
+    document.querySelectorAll('#plBody .pl-group').forEach(g=>{
+      let any=false;
+      g.querySelectorAll('.pl-task').forEach(t=>{
+        const hit=t.textContent.toLowerCase().includes(q);
+        t.style.display=hit?'':'none'; if(hit) any=true;
+      });
+      const gt=g.querySelector('.pl-gtitle');
+      const gHit=gt.textContent.toLowerCase().includes(q);
+      if(gHit) g.querySelectorAll('.pl-task').forEach(t=>t.style.display='');
+      g.style.display=(any||gHit)?'':'none';
+    });
+  });
+  setTimeout(()=>sb.focus(),50);
+};
+window.__closeProjectList = function(){ const o=document.getElementById('projListOverlay'); if(o) o.remove(); };
+
 window.__toggleTask = function(id){
   if(collapsedTaskIds.has(id)) collapsedTaskIds.delete(id);
   else collapsedTaskIds.add(id);
   render();
+};
+
+/* 点甘特色条 → 定位左侧对应任务：展开该任务、滚动到它、整行高亮闪一下 */
+window.__focusTask = function(id){
+  collapsedTaskIds.delete(id);
+  const proj = (state.entries.find(e=>e.id===id)||{}).project || '（未分类项目）';
+  collapsedGroups.delete(proj);
+  flashId = id;
+  focusTaskId = id;
+  render();
+  requestAnimationFrame(()=>{
+    const row = document.querySelector('tr[data-task-id="'+id+'"]');
+    if(row) row.scrollIntoView({behavior:'smooth', block:'center'});
+    focusTaskId = null;
+  });
 };
 
 /* ---------- 状态切换 ---------- */
