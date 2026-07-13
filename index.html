@@ -330,6 +330,21 @@
     .kbd-hint{display:none;}
     #searchBox{width:140px;}
     .filterbar{padding:8px 10px 0;}
+    /* 弹窗手机端：接近全屏、可滚动，避免内容看不全 */
+    .overlay{padding:12px 8px;}
+    .modal{max-width:100%; padding:16px 14px; max-height:94vh; overflow-y:auto;}
+    .modal h2{font-size:15px;}
+    .row2{flex-direction:column; gap:0;}
+    /* 工序表：隐藏次要列，工序名输入占满宽度 */
+    .steps-table th{padding:4px 3px; font-size:10px;}
+    .steps-table td{padding:5px 3px;}
+    .steps-table input[type=number]{width:52px; font-size:12px;}
+    .steps-table input[type=text]{font-size:13px; padding:7px 8px;}
+    .steps-table .col-status{display:none;}
+    .mv-btn{width:26px; height:26px;}
+    .quickadd button{font-size:12px; padding:5px 10px;}
+    /* 记时/用餐弹窗输入更大好点 */
+    .field input[type=datetime-local], .field input[type=time]{font-size:14px; padding:10px;}
   }
 </style>
 </head>
@@ -523,6 +538,7 @@ function applyRemote(row){
   if(data.templates && data.templates.length) state.templates = data.templates;
   state.entries = normalizeEntries(data.entries || []);
   if(data.title) state.title = data.title;
+  if(Array.isArray(data.meals)) state.meals = data.meals;
   lastRemoteStamp = row.updated_at || null;
 }
 
@@ -603,8 +619,19 @@ function showToast(msg){
 }
 
 /* ---------- 排程与聚合 ---------- */
-/* 吃饭时间（北京时间，分钟表示）：排程会自动避开，工序不会被排进饭点 */
-const MEAL_BREAKS = [ [12*60, 12*60+30, '午休'], [17*60+30, 18*60, '晚餐'] ];
+/* 吃饭时间（北京时间，分钟表示）：排程会自动避开，且饭点计入任务占用与当日工时。
+   可在界面「🍽 用餐时间」按钮里手动修改，存云端多端同步。 */
+const DEFAULT_MEALS = [ {start:12*60, end:12*60+30, label:'午休'}, {start:17*60+30, end:18*60, label:'晚餐'} ];
+function getMeals(){
+  const m = (state.meals && state.meals.length) ? state.meals : DEFAULT_MEALS;
+  return m.map(x=>[x.start, x.end, x.label]);
+}
+/* 某绝对时刻落在哪个饭点内则返回该饭点，否则 null */
+function mealAt(absTime){
+  const q=bjParts(absTime); const m=q.h*60+q.mi;
+  for(const b of getMeals()){ if(m>=b[0] && m<b[1]) return b; }
+  return null;
+}
 /* 若 [t, t+dur分钟) 与某个饭点重叠，则把开始时间顺延到该饭点结束 */
 function skipMealBreaks(t, dur){
   let cur = t;
@@ -612,7 +639,7 @@ function skipMealBreaks(t, dur){
     const q = bjParts(cur);
     const m = q.h*60 + q.mi;
     let moved = false;
-    for(const b of MEAL_BREAKS){
+    for(const b of getMeals()){
       if(m < b[1] && m + dur > b[0]){
         cur = bjMake(q.y, q.mo, q.da, Math.floor(b[1]/60), b[1]%60);
         moved = true; break;
@@ -621,6 +648,26 @@ function skipMealBreaks(t, dur){
     if(!moved) return cur;
   }
   return cur;
+}
+/* 一个时间跨度 [s,e) 内包含多少分钟的饭点（用于"占用时长"与工时计入） */
+function mealMinutesInSpan(s, e){
+  if(e<=s) return 0;
+  let total=0;
+  const p=bjParts(s);
+  for(const b of getMeals()){
+    // 遍历 s..e 覆盖到的每一天的该饭点（生产任务一般当天内，简单按 s 当天算，跨天再补）
+    let day=bjMidnight(s);
+    for(let d=0; d<3 && day<e; d++){
+      const dp=bjParts(day);
+      const ms=bjMake(dp.y,dp.mo,dp.da,Math.floor(b[0]/60),b[0]%60);
+      const me=bjMake(dp.y,dp.mo,dp.da,Math.floor(b[1]/60),b[1]%60);
+      const lo=Math.max(s.getTime(), ms.getTime());
+      const hi=Math.min(e.getTime(), me.getTime());
+      if(hi>lo) total += (hi-lo)/60000;
+      day=new Date(day.getTime()+86400000);
+    }
+  }
+  return Math.round(total);
 }
 
 function computeSchedule(entry){
@@ -651,6 +698,28 @@ function entryActualEndDate(entry){
     }
   });
   return latest;
+}
+/* 实际最早开始（没有任何实际记录则返回 null） */
+function entryActualStartDate(entry){
+  let earliest=null;
+  entry.steps.forEach(st=>{
+    if(st.actualStart){ const s=new Date(st.actualStart); if(!earliest||s<earliest) earliest=s; }
+  });
+  return earliest;
+}
+/* [s,e) 内、且落在指定北京日的饭点分钟数 */
+function mealMinutesInSpanOnDay(s, e, dateStr){
+  if(!s||!e||e<=s) return 0;
+  let total=0;
+  const ps=dateStr.split('-'); const y=+ps[0], mo=+ps[1], da=+ps[2];
+  for(const b of getMeals()){
+    const ms=bjMake(y,mo,da,Math.floor(b[0]/60),b[0]%60);
+    const me=bjMake(y,mo,da,Math.floor(b[1]/60),b[1]%60);
+    const lo=Math.max(s.getTime(), ms.getTime());
+    const hi=Math.min(e.getTime(), me.getTime());
+    if(hi>lo) total += (hi-lo)/60000;
+  }
+  return Math.round(total);
 }
 function pctDone(entry){
   const inc=entry.steps.filter(s=>s.included!==false);
@@ -742,16 +811,46 @@ function groupByProject(entries){
   return result;
 }
 
+/* 合并区间求总时长（毫秒），重叠部分只算一次 */
+function mergedMinutes(intervals){
+  if(!intervals.length) return 0;
+  const iv = intervals.filter(x=>x[1]>x[0]).sort((a,b)=>a[0]-b[0]);
+  if(!iv.length) return 0;
+  let total=0, curS=iv[0][0], curE=iv[0][1];
+  for(let i=1;i<iv.length;i++){
+    if(iv[i][0]<=curE){ if(iv[i][1]>curE) curE=iv[i][1]; }
+    else { total+=curE-curS; curS=iv[i][0]; curE=iv[i][1]; }
+  }
+  total+=curE-curS;
+  return Math.round(total/60000);
+}
+/* 把某北京日的饭点区间裁到 [s,e] 范围内返回（用于并入实际/计划占用） */
+function mealIntervalsOnDay(dateStr, clampS, clampE){
+  const ps=dateStr.split('-'); const y=+ps[0],mo=+ps[1],da=+ps[2];
+  const out=[];
+  for(const b of getMeals()){
+    let ms=bjMake(y,mo,da,Math.floor(b[0]/60),b[0]%60).getTime();
+    let me=bjMake(y,mo,da,Math.floor(b[1]/60),b[1]%60).getTime();
+    if(clampS!=null) ms=Math.max(ms, clampS);
+    if(clampE!=null) me=Math.min(me, clampE);
+    if(me>ms) out.push([ms,me]);
+  }
+  return out;
+}
+
 /* ---------- 统计（面板用） ---------- */
 function computeStats(dateStr){
   const now=new Date();
-  let actualMin=0, actualMinOfDone=0, plannedMinOfDone=0;
+  let actualMinOfDone=0, plannedMinOfDone=0;
   let doneSteps=0, inProgressSteps=0;
   let plannedMinToday=0, totalStepsToday=0, doneStepsToday=0, tasksToday=0, tasksDoneToday=0;
   const perProject={};
+  const dayStart=(function(){ const ps=dateStr.split('-'); return bjMake(+ps[0],+ps[1],+ps[2],0,0).getTime(); })();
+  const dayEnd=dayStart+86400000;
+  const globalIv=[];             // 全局实际执行区间（用于去重合并）
   function proj(entry){
     const key=(entry.project||'').trim()||'（未分类）';
-    if(!perProject[key]) perProject[key]={actual:0,planned:0,done:0,total:0};
+    if(!perProject[key]) perProject[key]={actual:0,planned:0,done:0,total:0,_iv:[]};
     return perProject[key];
   }
   state.entries.forEach(entry=>{
@@ -766,20 +865,43 @@ function computeStats(dateStr){
         if(s.status==='done'){ doneStepsToday++; p.done++; }
       });
       if(included.length && included.every(s=>s.status==='done')) tasksDoneToday++;
+      /* 计划工时含饭点（也去重：饭点并入该任务计划区间一起合并） */
+      const pmm = mealMinutesInSpanOnDay(entryStartDate(entry), entryPlannedEndDate(entry), dateStr);
+      if(pmm>0){ plannedMinToday += pmm; p.planned += pmm; }
     }
+    /* 收集当天的实际执行区间（供全局与项目去重合并），并统计偏差用的量 */
+    const p2=proj(entry);
     included.forEach(s=>{
       if(s.actualStart && sameDay(s.actualStart, dateStr)){
-        const st=new Date(s.actualStart);
-        const mins = s.status==='done' ? Math.max(1,s.actualMinutes||1) : Math.max(1,(now-st)/60000);
-        actualMin+=mins; proj(entry).actual+=mins;
-        if(s.status==='done'){ doneSteps++; actualMinOfDone+=mins; plannedMinOfDone+=Math.max(1,s.minutes|0); }
+        const st=new Date(s.actualStart).getTime();
+        const durMs = (s.status==='done' ? Math.max(1,s.actualMinutes||1) : Math.max(1,(now-new Date(s.actualStart))/60000))*60000;
+        const iv=[Math.max(st,dayStart), Math.min(st+durMs,dayEnd)];
+        globalIv.push(iv); p2._iv.push(iv);
+        if(s.status==='done'){ doneSteps++; actualMinOfDone+=Math.max(1,s.actualMinutes||1); plannedMinOfDone+=Math.max(1,s.minutes|0); }
         if(s.status==='in_progress') inProgressSteps++;
       }
     });
+    /* C 口径：把该任务实际跨度覆盖到的饭点也并入区间（一起合并去重） */
+    const actS=entryActualStartDate(entry), actE=entryActualEndDate(entry);
+    if(actS && actE && actE>actS){
+      mealIntervalsOnDay(dateStr, actS.getTime(), actE.getTime()).forEach(iv=>{ globalIv.push(iv); p2._iv.push(iv); });
+    }
   });
+  /* 合并去重后的实际总工时（重叠只算一次） */
+  const actualMin = mergedMinutes(globalIv);
+  /* 当日饭点净计入量（合并后饭点区间与工作区间的实际占用，用于显示） */
+  const mealIvAll = mealIntervalsOnDay(dateStr, dayStart, dayEnd);
+  const mealMinToday = mergedMinutes(globalIv.filter(iv=>mealIvAll.some(m=>iv[0]<m[1]&&iv[1]>m[0])).map(iv=>{
+    // 仅取与饭点相交的部分
+    let best=null;
+    mealIvAll.forEach(m=>{ const lo=Math.max(iv[0],m[0]), hi=Math.min(iv[1],m[1]); if(hi>lo) best=best?[Math.min(best[0],lo),Math.max(best[1],hi)]:[lo,hi]; });
+    return best||[0,0];
+  }));
+  Object.values(perProject).forEach(p=>{ p.actual=mergedMinutes(p._iv); delete p._iv; });
+
   const deviation = doneSteps ? Math.round(actualMinOfDone-plannedMinOfDone) : 0;
   const completion = totalStepsToday ? Math.round(doneStepsToday/totalStepsToday*100) : 0;
-  return {actualMin, deviation, doneSteps, inProgressSteps, plannedMinToday, totalStepsToday, doneStepsToday, tasksToday, tasksDoneToday, completion, perProject};
+  return {actualMin, mealMinToday, deviation, doneSteps, inProgressSteps, plannedMinToday, totalStepsToday, doneStepsToday, tasksToday, tasksDoneToday, completion, perProject};
 }
 
 /* ---------- 日报 / 周报 ---------- */
@@ -808,7 +930,7 @@ function buildDailyReport(dateStr){
   const lines=[];
   lines.push('📋 生产日报 · '+fmtDay(d));
   lines.push('────────────');
-  lines.push('⏱ 当日实际投入：'+fmtMin(s.actualMin)+(s.inProgressSteps?'（含 '+s.inProgressSteps+' 道进行中）':''));
+  lines.push('⏱ 当日实际投入：'+fmtMin(s.actualMin)+(s.mealMinToday>0?'（含用餐 '+fmtMin(s.mealMinToday)+'）':'')+(s.inProgressSteps?'（含 '+s.inProgressSteps+' 道进行中）':''));
   lines.push('✅ 当日完成任务 '+finishedToday.length+' 个；🔄 在办 '+ongoing.length+' 个；⏳ 待开始 '+notStarted.length+' 个');
   if(finishedToday.length){
     lines.push('');
@@ -939,7 +1061,7 @@ function statsPanelHTML(){
     ${statsCollapsed?'':`
     <div class="kpi-row">
       <div class="kpi good"><div class="k-label">当日实际投入工时</div><div class="k-value">${fmtMin(s.actualMin)}</div>
-        <div class="k-sub">${s.inProgressSteps? s.inProgressSteps+' 道工序进行中':'按实际开始/完成时间统计'}</div></div>
+        <div class="k-sub">${s.mealMinToday>0?'含用餐 '+fmtMin(s.mealMinToday)+' · ':''}${s.inProgressSteps? s.inProgressSteps+' 道工序进行中':'按实际开始/完成时间统计'}</div></div>
       <div class="kpi"><div class="k-label">当日计划工作量</div><div class="k-value">${fmtMin(s.plannedMinToday)}</div>
         <div class="k-sub">${s.tasksToday} 个任务排产</div></div>
       <div class="kpi ${s.completion>=80?'good':(s.completion>=50?'warn':'')}"><div class="k-label">工序完成率</div><div class="k-value">${s.completion}%</div>
@@ -1066,7 +1188,7 @@ function render(){
         }
         /* 饭点底纹（排程会自动避开这两段） */
         const p0=bjParts(b.start);
-        MEAL_BREAKS.forEach(mb=>{
+        getMeals().forEach(mb=>{
           const ms=bjMake(p0.y,p0.mo,p0.da, Math.floor(mb[0]/60), mb[0]%60);
           const me=bjMake(p0.y,p0.mo,p0.da, Math.floor(mb[1]/60), mb[1]%60);
           if(me>b.start && ms<b.end){
@@ -1285,6 +1407,7 @@ function render(){
           <button onclick="__toggleWorkHours()" title="切换时间轴显示范围">${workHoursOnly?'⏰ 8-20点':'🌐 全天'}</button>
         </div>
         <button class="btn ${collapsePast?'toggled':''}" onclick="__toggleCollapse()">${collapsePast?'▸ 往日已折叠':'▾ 展开显示往日'}</button>
+        <button class="btn" onclick="__openMeals()">🍽 用餐时间</button>
         <button class="btn" onclick="__openProjectList()">📁 项目列表</button>
         <button class="btn" onclick="__openTemplates()">默认工序库</button>
         <button class="btn primary" onclick="__openNew(false)">＋新建任务</button>
@@ -1366,6 +1489,56 @@ window.__toggleGroup = function(proj){
   if(collapsedGroups.has(proj)) collapsedGroups.delete(proj);
   else collapsedGroups.add(proj);
   render();
+};
+
+/* 🍽 用餐时间编辑：改午饭/晚饭起止，存云端，排程与工时同步生效 */
+function minToHM(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+function hmToMin(v){ const m=(v||'').match(/^(\d{1,2}):(\d{2})/); return m? (+m[1])*60+(+m[2]) : 0; }
+window.__openMeals = function(){
+  let working = (state.meals && state.meals.length ? state.meals : DEFAULT_MEALS).map(x=>({...x}));
+  const overlay=document.createElement('div');
+  overlay.className='overlay'; overlay.id='mealsOverlay';
+  function rows(){
+    return working.map((mb,i)=>`<tr>
+      <td><input type="text" class="mLabel" data-i="${i}" value="${escapeHTML(mb.label)}" style="width:90px;"></td>
+      <td><input type="time" class="mStart" data-i="${i}" value="${minToHM(mb.start)}"></td>
+      <td>—</td>
+      <td><input type="time" class="mEnd" data-i="${i}" value="${minToHM(mb.end)}"></td>
+      <td><button type="button" class="del-row" data-del="${i}">×</button></td>
+    </tr>`).join('');
+  }
+  overlay.innerHTML=`<div class="modal" style="max-width:480px;">
+    <h2>🍽 用餐时间</h2>
+    <div class="sub">排程会自动避开这些时段；这些时段同时计入任务占用时长与当日实际工时。改动存云端、多端同步。</div>
+    <table class="steps-table"><thead><tr><th>名称</th><th>开始</th><th></th><th>结束</th><th></th></tr></thead><tbody id="mBody">${rows()}</tbody></table>
+    <div style="margin-top:8px;"><button type="button" class="btn" id="mAdd">＋ 添加用餐时段</button></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="document.getElementById('mealsOverlay').remove()">取消</button>
+      <button class="btn primary" id="mSave">保存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',(e)=>{ if(e.target===overlay) overlay.remove(); });
+  function sync(){
+    document.querySelectorAll('#mBody tr').forEach((tr,i)=>{
+      const l=tr.querySelector('.mLabel'), s=tr.querySelector('.mStart'), e=tr.querySelector('.mEnd');
+      if(working[i]){ working[i].label=l.value.trim()||'用餐'; working[i].start=hmToMin(s.value); working[i].end=hmToMin(e.value); }
+    });
+  }
+  function rerender(){ document.getElementById('mBody').innerHTML=rows(); bind(); }
+  function bind(){
+    document.querySelectorAll('#mBody .del-row').forEach(b=>b.onclick=()=>{ sync(); working.splice(+b.dataset.del,1); rerender(); });
+  }
+  bind();
+  document.getElementById('mAdd').onclick=()=>{ sync(); working.push({label:'加餐', start:15*60, end:15*60+15}); rerender(); };
+  document.getElementById('mSave').onclick=async ()=>{
+    sync();
+    for(const mb of working){ if(mb.end<=mb.start){ showToast('「'+mb.label+'」结束时间要晚于开始时间。'); return; } }
+    state.meals = working;
+    await saveBoard();
+    overlay.remove();
+    showToast('用餐时间已更新，排程与工时已同步。');
+  };
 };
 
 /* 📁 项目列表：列出各项目下的任务及完成时间，点击定位 */
@@ -1697,7 +1870,7 @@ function stepRowHTML(s, idx){
     <td><span class="swatch" style="background:${s.color}"></span></td>
     <td><input type="text" class="stepLabel" data-step-idx="${idx}" placeholder="工序名称" value="${escapeHTML(s.label)}"></td>
     <td><input type="number" min="1" class="stepMinutes" data-step-idx="${idx}" value="${s.minutes}"> 分</td>
-    <td>${s.status==='done'?'<span style="color:var(--green); font-size:11px;">已完成</span>':(s.status==='in_progress'?'<span style="color:var(--amber); font-size:11px;">进行中</span>':'')}</td>
+    <td class="col-status">${s.status==='done'?'<span style="color:var(--green); font-size:11px;">已完成</span>':(s.status==='in_progress'?'<span style="color:var(--amber); font-size:11px;">进行中</span>':'')}</td>
     <td class="reorder-cell"><button type="button" class="mv-btn" data-mv-up="${idx}" title="上移">↑</button><button type="button" class="mv-btn" data-mv-dn="${idx}" title="下移">↓</button></td>
     <td><button type="button" class="del-row" data-del-idx="${idx}" title="删除此工序">×</button></td>
   </tr>`;
@@ -1763,7 +1936,7 @@ function openModal(draft){
       <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px; font-weight:600;">工序（点击标签快速添加）</label>
       <div class="quickadd" id="quickAddArea">${quickAddHTML()}</div>
       <table class="steps-table">
-        <thead><tr><th></th><th></th><th>工序名称</th><th>预计时长</th><th>状态</th><th>调序</th><th></th></tr></thead>
+        <thead><tr><th></th><th></th><th>工序名称</th><th>预计时长</th><th class="col-status">状态</th><th>调序</th><th></th></tr></thead>
         <tbody id="stepsBody">${stepsTableHTML()}</tbody>
       </table>
       <div class="modal-actions">
