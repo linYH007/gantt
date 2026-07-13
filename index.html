@@ -92,6 +92,8 @@
   tr.task-row .namecol{padding:10px 14px 6px;}
   .task-head{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;}
   .task-name{font-size:14px; font-weight:700;}
+  .task-name-toggle{font-family:inherit; color:inherit; background:transparent; border:none; padding:0; text-align:left; cursor:pointer;}
+  .task-name-toggle:focus-visible{outline:2px solid var(--blue); outline-offset:2px; border-radius:3px;}
   .temp-badge{font-size:10px; color:#fff; background:var(--amber); padding:1px 7px; border-radius:9px; font-weight:600;}
   .done-badge{font-size:10.5px; color:#fff; background:var(--green); padding:1px 8px; border-radius:9px; font-weight:600;}
   .task-meta{font-size:11px; color:var(--text-dim); width:100%;}
@@ -109,12 +111,16 @@
   tr.step-row:hover td{background:#f8fafc;}
   tr.step-row .namecol{padding:0 14px;}
   .step-line{display:flex; align-items:center; gap:7px; height:42px;}
+  .board-step-drag-handle{width:24px; height:28px; flex:none; border:1px solid var(--line); border-radius:5px; background:#fff;
+    color:var(--text-dim); font-size:14px; line-height:1; padding:0; cursor:grab; touch-action:none; user-select:none;}
+  .board-step-drag-handle:hover,.board-step-drag-handle:focus-visible{color:var(--blue); border-color:#bcd7f5; outline:none; box-shadow:0 0 0 3px rgba(74,144,226,.12);}
+  .board-step-drag-handle:active{cursor:grabbing;}
   .step-status-ic{width:20px; height:20px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
     font-size:11px; color:#fff; font-weight:800; border:2px solid #b6c1cd; background:#fff; cursor:pointer; transition:.12s;}
   .step-status-ic:hover{border-color:var(--blue); transform:scale(1.12);}
   .step-status-ic.inprogress{border-color:var(--amber); background:var(--amber);}
   .step-status-ic.done{border-color:var(--green); background:var(--green);}
-  .step-label-text{font-size:13px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .step-label-text{font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   tr.step-row.is-done .step-label-text{color:#a4afba; text-decoration:line-through;}
   .step-min{font-size:11px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; flex:none;}
   .time-btn{flex:none; background:transparent; border:1px solid var(--line); color:var(--text-dim); border-radius:6px; font-size:10.5px; padding:2px 7px; cursor:pointer;}
@@ -151,6 +157,10 @@
   .tc-line.prog{color:#b57904;}
   .tc-line.dim{color:#b3bdc8;}
   tr.step-row .timecol:hover{background:#eef4fb;}
+  .step-time-editor:focus-visible{outline:2px solid var(--blue); outline-offset:-2px;}
+  tr.step-row.board-step-dragging{opacity:.5;}
+  tr.step-row.board-step-drop-before td{box-shadow:inset 0 2px 0 var(--blue);}
+  tr.step-row.board-step-drop-after td{box-shadow:inset 0 -2px 0 var(--blue);}
   th.timecol{z-index:6; top:0; background:#fafbfd; vertical-align:bottom; padding-bottom:8px;}
 
   /* 数据变动后的图表互动反馈：改动的任务整块闪一下、色条弹入 */
@@ -223,6 +233,7 @@
   .steps-table{width:100%; border-collapse:collapse; margin-top:6px;}
   .steps-table th{text-align:left; font-size:11px; color:var(--text-dim); padding:5px 6px; border-bottom:1px solid var(--line); font-weight:600;}
   .steps-table td{padding:6px; border-bottom:1px solid var(--line-2); vertical-align:middle;}
+  .steps-table td.duration-cell{white-space:nowrap;}
   .steps-table input[type=number]{width:66px; padding:6px; font-size:12.5px; border:1px solid var(--line); border-radius:6px;}
   .steps-table input[type=text]{padding:6px 8px; font-size:12.5px; width:100%; border:1px solid var(--line); border-radius:6px;}
   .swatch{width:12px; height:12px; border-radius:3px; display:inline-block; flex:none;}
@@ -244,7 +255,7 @@
   .quickadd button.manage-tpl{border-style:dashed; color:var(--blue); border-color:#bcd7f5;}
   .quickadd button.manage-tpl:hover{background:#eef4fc;}
   .task-caret{flex:none; align-self:center; width:18px; height:18px; border-radius:5px; border:1px solid var(--line); background:#fff; color:var(--text-dim);
-    font-size:10px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:.12s;}
+    font-size:10px; padding:0; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:.12s;}
   .task-caret:hover{color:var(--blue); border-color:#bcd7f5; background:#eef4fc;}
   tr.task-row.task-collapsed td{border-bottom:1px solid var(--line);}
 
@@ -263,8 +274,10 @@
   .group-count{font-size:11px; color:#9aa5b1; font-weight:400;}
   /* 折叠任务卡片 */
   .task-collapsed-card .cc-line{display:flex; align-items:center; gap:7px;}
+  .task-collapsed-card .task-name{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .cc-pct{font-size:11px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace;}
-  .task-collapsed-card{background:#fafcff;}
+  tr.task-collapsed-card td{background:#fafcff;}
+  .idle-badge{font-size:10px; color:#64748b; background:#eef2f6; padding:1px 7px; border-radius:9px; font-weight:600; white-space:nowrap;}
   /* 项目列表面板 */
   .pl-body{max-height:60vh; overflow:auto;}
   .pl-group{margin-bottom:14px;}
@@ -310,21 +323,25 @@
     .namecol{width:168px; min-width:168px; max-width:168px;}
     tr.task-row .namecol{padding:8px 8px 5px;}
     tr.step-row .namecol{padding:0 8px;}
-    .timecol{width:104px; min-width:104px; max-width:104px; left:168px; padding:3px 6px;}
-    th.timecol{left:168px; font-size:9.5px;}
+    .timecol{position:static; width:104px; min-width:104px; max-width:104px; left:auto; padding:3px 6px;}
+    th.timecol{position:sticky; top:0; left:auto; z-index:4; font-size:9.5px;}
     .tc-line{font-size:9.5px; line-height:1.6;}
     .tc-line .tc-k{width:24px; font-size:9px;}
     .task-head .task-name{font-size:12.5px;}
     .task-meta{font-size:9.5px;}
     .mini-btn{font-size:10.5px;}
     .step-line{gap:5px; height:36px;}
+    .board-step-drag-handle{width:28px; height:32px; font-size:15px;}
     .step-label-text{font-size:11.5px;}
     .step-min{display:none;}
     .step-btn{padding:2px 7px; font-size:10px;}
     .step-status-ic{width:17px; height:17px; font-size:10px;}
     .btn{padding:6px 10px; font-size:12px;}
     .zoomset button{padding:6px 8px; font-size:11px;}
-    .topbar{padding:10px 10px; gap:8px;}
+    .topbar{padding:10px 10px; gap:8px; align-items:flex-start;}
+    .topbar .toolbar{width:100%; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin;}
+    .topbar .toolbar > *{flex:none;}
+    .desktop-new-btn{display:none;}
     .subbar{padding:8px 10px 0; gap:10px;}
     .stats-panel{margin:10px 10px 0; padding:10px 10px;}
     .kpi{min-width:45%; padding:8px 10px;}
@@ -387,8 +404,8 @@ const STEP_TEMPLATES_DEFAULT = [
 
 let state = { templates: STEP_TEMPLATES_DEFAULT.map(s=>({...s})), entries: [], title: '' };
 let zoomPx = 60;
-/* 看板上被折叠（只显示任务头、隐藏工序行）的任务 id 集合；新建任务时旧任务自动折叠 */
-let collapsedTaskIds = new Set();
+/* 任务折叠的手动覆盖：id => true(折叠) / false(展开)。无覆盖时按当日实际参与与完成状态自动判断。 */
+let taskCollapseOverrides = new Map();
 let collapsePast = true;
 let editingId = null;
 let loaded = false;
@@ -403,8 +420,7 @@ let workHoursOnly = true;          // 时间轴只展开工作时段（8-20点�
 try{ if(localStorage.getItem('gantt:workHoursOnly')==='0') workHoursOnly=false; }catch(_e){}
 let statsCollapsed = false;        // 统计面板折叠（记住偏好）
 try{ statsCollapsed = localStorage.getItem('gantt:statsCollapsed')==='1'; }catch(_e){}
-let undoSnapshot = null;           // 一步撤销的数据快照
-let undoLabel = '';
+let mutationEpoch = 0;             // 每次本地保存或远端替换都会推进，用于阻止过期撤销
 
 function uid(){ return 'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 /* ============ 时区钉死为北京时间（Asia/Shanghai） ============
@@ -463,9 +479,31 @@ let flashId = null;
    无覆盖时，“全部”视图会自动折叠当日无关的项目。 */
 let groupCollapseOverrides = new Map();
 let groupCollapseOverrideDate = '';
+function ensureCollapseOverrideDate(dateStr=localDateStr(new Date())){
+  if(groupCollapseOverrideDate!==dateStr){
+    groupCollapseOverrides.clear();
+    taskCollapseOverrides.clear();
+    groupCollapseOverrideDate=dateStr;
+  }
+  return dateStr;
+}
 let focusTaskId = null;            // 本次要高亮定位的任务
+let activeBoardStepDragCleanup = null;
+let pendingBoardStepFocus = null;
+let activeUndoToast = null;
+function advanceMutationEpoch(){
+  mutationEpoch++;
+  if(activeUndoToast){ activeUndoToast.remove(); activeUndoToast=null; }
+  return mutationEpoch;
+}
 function fmtHM(d){ return _bjHMFmt.format(d); }
 function fmtDay(d){ const p=bjParts(d); const dw=['周日','周一','周二','周三','周四','周五','周六'][bjDow(d)]; return String(p.mo).padStart(2,'0')+'/'+String(p.da).padStart(2,'0')+dw; }
+function fmtTimeRange(start,end){
+  return fmtHM(start)+'–'+(localDateStr(start)===localDateStr(end)?'':fmtDay(end)+' ')+fmtHM(end);
+}
+function fmtEntryMoment(entry,moment){
+  return localDateStr(entryStartDate(entry))===localDateStr(moment) ? fmtHM(moment) : fmtDay(moment)+' '+fmtHM(moment);
+}
 function fmtMin(m){
   m = Math.round(m);
   if(m < 60) return m + '分';
@@ -476,11 +514,15 @@ function sameDay(iso, dateStr){ if(!iso) return false; return localDateStr(new D
 function escapeHTML(str){ const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
 
 function normalizeEntries(entries){
+  const seenEntryIds=new Set();
   (entries||[]).forEach(en=>{
-    if(!en.id) en.id = uid();
+    if(!en.id || seenEntryIds.has(en.id)) en.id = uid();
+    seenEntryIds.add(en.id);
     if(en.project===undefined) en.project='';
+    const seenStepIds=new Set();
     (en.steps||[]).forEach((s,i)=>{
-      if(!s.id) s.id = en.id + '_s' + i;
+      if(!s.id || seenStepIds.has(s.id)) s.id = en.id + '_s' + i + '_' + uid().slice(-4);
+      seenStepIds.add(s.id);
       if(!s.status) s.status = s.done ? 'done' : 'pending';
       if(s.included===undefined) s.included = true;
       if(!s.color) s.color = STEP_PALETTE[i % STEP_PALETTE.length];
@@ -539,15 +581,37 @@ async function sbFetch(url, opts={}){
 }
 let lastRemoteStamp = null;
 let pollTimer = null;
+let latestPollRequest = 0;
+let saveQueue = Promise.resolve();
+let pendingSaveCount = 0;
+let localSaveVersion = 0;
+let syncedSaveVersion = 0;
+let lastGeneratedSaveMs = 0;
+function hasUnsyncedChanges(){ return localSaveVersion > syncedSaveVersion; }
+function canonicalStamp(value){
+  const ms=Date.parse(value||'');
+  return Number.isFinite(ms)?new Date(ms).toISOString():(value||null);
+}
+function nextSaveStamp(){
+  lastGeneratedSaveMs=Math.max(Date.now(),lastGeneratedSaveMs+1);
+  return new Date(lastGeneratedSaveMs).toISOString();
+}
 
 function applyRemote(row){
   if(!row || !row.data) return;
+  advanceMutationEpoch();
   const data = row.data;
-  if(data.templates && data.templates.length) state.templates = data.templates;
+  const wasFinished=new Map(state.entries.map(entry=>[entry.id,taskInfo(entry).finished]));
+  if(Array.isArray(data.templates)) state.templates = data.templates;
   state.entries = normalizeEntries(data.entries || []);
-  if(data.title) state.title = data.title;
+  const liveIds=new Set(state.entries.map(entry=>entry.id));
+  for(const id of taskCollapseOverrides.keys()) if(!liveIds.has(id)) taskCollapseOverrides.delete(id);
+  state.entries.forEach(entry=>{
+    if(wasFinished.get(entry.id)===false && taskInfo(entry).finished) taskCollapseOverrides.delete(entry.id);
+  });
+  if(typeof data.title==='string') state.title = data.title;
   if(Array.isArray(data.meals)) state.meals = data.meals;
-  lastRemoteStamp = row.updated_at || null;
+  lastRemoteStamp = canonicalStamp(row.updated_at);
 }
 
 async function fetchBoard(){
@@ -567,13 +631,19 @@ function friendlyError(e){
 }
 
 async function pollOnce(silent){
+  const requestId=++latestPollRequest;
+  const saveVersionAtRequest=localSaveVersion;
+  const remoteStampAtRequest=lastRemoteStamp;
   try{
     const row = await fetchBoard();
-    const changed = row && row.updated_at !== lastRemoteStamp;
-    if(changed) applyRemote(row);
-    connectionStatus = 'ok'; lastError='';
+    if(requestId!==latestPollRequest || saveVersionAtRequest!==localSaveVersion || remoteStampAtRequest!==lastRemoteStamp) return false;
+    const changed = row && canonicalStamp(row.updated_at) !== lastRemoteStamp;
+    const canApply = changed && pendingSaveCount===0 && !hasUnsyncedChanges();
+    if(canApply) applyRemote(row);
+    connectionStatus = hasUnsyncedChanges() ? 'cache' : 'ok';
+    lastError = hasUnsyncedChanges() ? '有本地改动待上传' : '';
     if(!loaded){ loaded = true; render(); }
-    else if(changed) render();
+    else if(canApply) render();
     else if(!silent) render();
     return true;
   }catch(e){
@@ -592,33 +662,62 @@ function initSupabase(){
 
 /* 手动同步：立即向云端拉取最新数据（也可用来验证网络） */
 window.__forceRefresh = async function(){
+  if(hasUnsyncedChanges()){
+    showToast('正在重试上传本地改动…');
+    const saved = await saveBoard();
+    showToast(saved ? '✅ 本地改动已同步到云端。' : '⚠ 仍未能上传，请检查网络后重试。');
+    return;
+  }
   showToast('正在向云端拉取最新数据…');
   const ok = await pollOnce(false);
   if(ok) showToast('✅ 已从云端拉取最新数据。');
 };
 
-async function saveBoard(){
-  if(NEEDS_SETUP){ showToast('尚未配置云数据库，无法保存。'); return; }
-  render(); // 本地先行，界面立即反馈
-  const stamp = new Date().toISOString();
-  const body = JSON.stringify([{ id:'main', data: JSON.parse(JSON.stringify(state)), updated_at: stamp }]);
+async function persistBoard(body, stamp){
+  let timeoutId=null;
   try{
     const ctrl = new AbortController();
-    const t = setTimeout(()=>ctrl.abort(), 8000);
+    timeoutId = setTimeout(()=>ctrl.abort(), 8000);
     const res = await sbFetch(BOARD_ROW_URL + '?on_conflict=id', {
       method:'POST',
       headers: {'Prefer':'resolution=merge-duplicates,return=minimal'},
       body, signal: ctrl.signal
     });
-    clearTimeout(t);
     if(!res.ok) throw new Error('HTTP '+res.status);
-    lastRemoteStamp = stamp;
-    if(connectionStatus!=='ok'){ connectionStatus='ok'; render(); }
+    lastRemoteStamp = canonicalStamp(stamp);
+    return true;
   }catch(e){
     connectionStatus='cache';
+    lastError=friendlyError(e);
     render();
-    showToast('⚠ 改动暂存在本页，未能上传云端（'+(e.name==='AbortError'?'超时':e.message)+'）——其他设备暂时看不到。网络恢复后点「🔄 手动同步」并重新保存。');
+    showToast('⚠ 改动已保留在本页，但暂未上传云端（'+(e.name==='AbortError'?'超时':e.message)+'）。网络恢复后点「🔄 手动同步」重试。');
+    return false;
+  }finally{
+    if(timeoutId!==null) clearTimeout(timeoutId);
   }
+}
+
+function saveBoard(){
+  advanceMutationEpoch();
+  if(NEEDS_SETUP){ showToast('尚未配置云数据库，无法保存。'); return Promise.resolve(false); }
+  render(); // 本地先行，界面立即反馈
+  const stamp = nextSaveStamp();
+  const body = JSON.stringify([{ id:'main', data: JSON.parse(JSON.stringify(state)), updated_at: stamp }]);
+  const version=++localSaveVersion;
+  pendingSaveCount++;
+  const job=saveQueue.then(async ()=>{
+    const ok=await persistBoard(body,stamp);
+    if(ok){
+      syncedSaveVersion=Math.max(syncedSaveVersion,version);
+      if(!hasUnsyncedChanges()){
+        lastError='';
+        if(connectionStatus!=='ok'){ connectionStatus='ok'; render(); }
+      }
+    }
+    return ok;
+  }).finally(()=>{ pendingSaveCount=Math.max(0,pendingSaveCount-1); });
+  saveQueue=job.catch(()=>false);
+  return job;
 }
 
 function showToast(msg){
@@ -807,28 +906,161 @@ function taskSortKey(entry){
 }
 
 function projectKey(entry){ return (entry.project||'').trim()||'（未分类项目）'; }
-function entryIsOnDate(entry, dateStr){
+function bjDateBounds(dateStr){
   const p=dateStr.split('-');
   const dayStart=bjMake(+p[0],+p[1],+p[2],0,0).getTime();
-  const dayEnd=dayStart+86400000;
+  return {dayStart, dayEnd:dayStart+86400000};
+}
+function entryHasActualOnDate(entry, dateStr){
+  const {dayStart,dayEnd}=bjDateBounds(dateStr);
+  const now=Date.now();
+  return (entry.steps||[]).some(s=>{
+    if(s.included===false || !s.actualStart) return false;
+    const actualStart=new Date(s.actualStart).getTime();
+    if(!Number.isFinite(actualStart)) return false;
+    let actualEnd;
+    if(s.status==='done') actualEnd=actualStart+Math.max(1,Number(s.actualMinutes)||1)*60000;
+    else if(s.status==='in_progress') actualEnd=now;
+    else return false;
+    return actualEnd>actualStart && actualStart<dayEnd && actualEnd>dayStart;
+  });
+}
+function entryIsOnDate(entry, dateStr){
+  const {dayStart,dayEnd}=bjDateBounds(dateStr);
   const plannedStart=entryStartDate(entry).getTime();
   const plannedEnd=entryPlannedEndDate(entry).getTime();
   if(plannedStart<dayEnd && plannedEnd>dayStart) return true;
-  const included=(entry.steps||[]).filter(s=>s.included!==false);
-  const now=Date.now();
-  return included.some(s=>{
-    if(!s.actualStart) return false;
-    const actualStart=new Date(s.actualStart).getTime();
-    const actualEnd=s.status==='done'
-      ? actualStart+Math.max(1,s.actualMinutes||1)*60000
-      : now;
-    return actualStart<dayEnd && actualEnd>dayStart;
+  return entryHasActualOnDate(entry,dateStr);
+}
+function taskIsCollapsed(entry, dateStr){
+  ensureCollapseOverrideDate(dateStr);
+  if(entry.id===focusTaskId) return false;
+  if(taskCollapseOverrides.has(entry.id)) return taskCollapseOverrides.get(entry.id);
+  if(filterMode!=='all' || searchQuery) return false;
+  return taskInfo(entry).finished || !entryHasActualOnDate(entry,dateStr);
+}
+function reorderedIncludedSteps(entry, sourceStepId, targetStepId, after){
+  const slots=[], ordered=[];
+  entry.steps.forEach((step,index)=>{
+    if(step.included!==false){ slots.push(index); ordered.push(step); }
   });
+  const beforeIds=ordered.map(step=>step.id).join('\u0000');
+  const sourceIndex=ordered.findIndex(step=>step.id===sourceStepId);
+  if(sourceIndex<0) return null;
+  const moved=ordered.splice(sourceIndex,1)[0];
+  const targetIndex=ordered.findIndex(step=>step.id===targetStepId);
+  if(targetIndex<0) return null;
+  ordered.splice(targetIndex+(after?1:0),0,moved);
+  if(ordered.map(step=>step.id).join('\u0000')===beforeIds) return null;
+  const next=entry.steps.slice();
+  slots.forEach((fullIndex,index)=>{ next[fullIndex]=ordered[index]; });
+  return next;
+}
+async function commitBoardStepReorder(entryId, sourceStepId, targetStepId, after){
+  const entry=state.entries.find(item=>item.id===entryId);
+  if(!entry) return;
+  const next=reorderedIncludedSteps(entry,sourceStepId,targetStepId,after);
+  if(!next) return;
+  const reorderUndo=snapshotForUndo('调整「'+entry.name+'」工序顺序');
+  entry.steps=next;
+  ensureCollapseOverrideDate();
+  taskCollapseOverrides.set(entry.id,false);
+  groupCollapseOverrides.set(projectKey(entry),false);
+  flashId=entry.id;
+  pendingBoardStepFocus={entryId:entry.id,stepId:sourceStepId};
+  const saveJob=saveBoard();
+  showUndoToast('工序顺序已调整，该任务的计划时间已自动重排。',reorderUndo);
+  await saveJob;
+}
+function bindBoardStepDragHandle(handle){
+  handle.onkeydown=(e)=>{
+    if(e.key!=='ArrowUp' && e.key!=='ArrowDown') return;
+    const entry=state.entries.find(item=>item.id===handle.dataset.entryId);
+    if(!entry) return;
+    const visible=entry.steps.filter(step=>step.included!==false);
+    const index=visible.findIndex(step=>step.id===handle.dataset.stepId);
+    const direction=e.key==='ArrowUp'?-1:1;
+    const target=visible[index+direction];
+    if(index<0 || !target) return;
+    e.preventDefault();
+    commitBoardStepReorder(entry.id,handle.dataset.stepId,target.id,direction>0);
+  };
+  handle.onpointerdown=(e)=>{
+    if(e.isPrimary===false || (e.pointerType==='mouse' && e.button!==0)) return;
+    if(activeBoardStepDragCleanup) activeBoardStepDragCleanup();
+    e.preventDefault();
+    handle.focus();
+    const sourceEntryId=handle.dataset.entryId;
+    const sourceStepId=handle.dataset.stepId;
+    const sourceRow=handle.closest('tr.step-row[data-entry-id]');
+    const pointerId=e.pointerId;
+    const startX=e.clientX,startY=e.clientY;
+    let dragging=false,cleaned=false,candidate=null;
+
+    function clearDropMarks(){
+      document.querySelectorAll('tr.board-step-drop-before,tr.board-step-drop-after').forEach(row=>row.classList.remove('board-step-drop-before','board-step-drop-after'));
+    }
+    function cleanup(){
+      if(cleaned) return;
+      cleaned=true;
+      clearDropMarks();
+      if(sourceRow) sourceRow.classList.remove('board-step-dragging');
+      handle.setAttribute('aria-grabbed','false');
+      window.removeEventListener('pointermove',onMove);
+      window.removeEventListener('pointerup',onUp);
+      window.removeEventListener('pointercancel',onCancel);
+      window.removeEventListener('blur',cleanup);
+      handle.removeEventListener('lostpointercapture',onLostCapture);
+      if(activeBoardStepDragCleanup===cleanup) activeBoardStepDragCleanup=null;
+      try{ if(handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId); }catch(_e){}
+    }
+    function onMove(ev){
+      if(ev.pointerId!==pointerId) return;
+      if(!dragging && Math.hypot(ev.clientX-startX,ev.clientY-startY)<6) return;
+      dragging=true;
+      ev.preventDefault();
+      if(sourceRow) sourceRow.classList.add('board-step-dragging');
+      handle.setAttribute('aria-grabbed','true');
+      const scrollArea=document.getElementById('scrollArea');
+      if(scrollArea){
+        const rect=scrollArea.getBoundingClientRect(),edge=44;
+        if(ev.clientY<rect.top+edge) scrollArea.scrollTop-=14;
+        else if(ev.clientY>rect.bottom-edge) scrollArea.scrollTop+=14;
+        savedScrollTop=scrollArea.scrollTop;
+      }
+      clearDropMarks();
+      candidate=null;
+      const hit=document.elementFromPoint(ev.clientX,ev.clientY);
+      const row=hit&&hit.closest?hit.closest('tr.step-row[data-entry-id]'):null;
+      if(!row || row.dataset.entryId!==sourceEntryId) return;
+      const targetStepId=row.dataset.stepId;
+      const rect=row.getBoundingClientRect();
+      const after=ev.clientY>rect.top+rect.height/2;
+      candidate={targetStepId,after};
+      row.classList.add(after?'board-step-drop-after':'board-step-drop-before');
+    }
+    function onUp(ev){
+      if(ev.pointerId!==pointerId) return;
+      const drop=candidate;
+      cleanup();
+      if(dragging && drop) commitBoardStepReorder(sourceEntryId,sourceStepId,drop.targetStepId,drop.after);
+    }
+    function onCancel(ev){ if(ev.pointerId===pointerId) cleanup(); }
+    function onLostCapture(ev){ if(ev.pointerId===pointerId) cleanup(); }
+    activeBoardStepDragCleanup=cleanup;
+    window.addEventListener('pointermove',onMove,{passive:false});
+    window.addEventListener('pointerup',onUp);
+    window.addEventListener('pointercancel',onCancel);
+    window.addEventListener('blur',cleanup);
+    handle.addEventListener('lostpointercapture',onLostCapture);
+    try{ handle.setPointerCapture(pointerId); }catch(_e){}
+  };
 }
 function projectIsOnDate(project, dateStr){
   return state.entries.some(entry=>projectKey(entry)===project && entryIsOnDate(entry, dateStr));
 }
 function groupIsCollapsed(project, dateStr){
+  ensureCollapseOverrideDate(dateStr);
   /* 搜索或专项筛选时直接展开，避免命中的任务被项目头隐藏。 */
   if(filterMode!=='all' || searchQuery) return false;
   if(groupCollapseOverrides.has(project)) return groupCollapseOverrides.get(project);
@@ -891,48 +1123,70 @@ function computeStats(dateStr){
   }
   state.entries.forEach(entry=>{
     const included=entry.steps.filter(s=>s.included!==false);
-    if(sameDay(entry.startISO, dateStr)){
+    const schedule=computeSchedule(entry);
+    let hasPlannedToday=false;
+    const entryDailyIv=[];
+    schedule.segments.forEach(seg=>{
+      const lo=Math.max(seg.startAbs.getTime(),dayStart);
+      const hi=Math.min(seg.endAbs.getTime(),dayEnd);
+      if(hi<=lo) return;
+      hasPlannedToday=true;
+      const minutes=Math.max(1,Math.round((hi-lo)/60000));
+      const p=proj(entry);
+      plannedMinToday+=minutes;
+      p.planned+=minutes;
+      p.total++; totalStepsToday++;
+      if(seg.step.status==='done'){ doneStepsToday++; p.done++; }
+    });
+    if(hasPlannedToday){
       tasksToday++;
       const p=proj(entry);
-      included.forEach(s=>{
-        plannedMinToday+=Math.max(1,s.minutes|0);
-        p.planned+=Math.max(1,s.minutes|0);
-        p.total++; totalStepsToday++;
-        if(s.status==='done'){ doneStepsToday++; p.done++; }
-      });
       if(included.length && included.every(s=>s.status==='done')) tasksDoneToday++;
-      /* 计划工时含饭点（也去重：饭点并入该任务计划区间一起合并） */
+      /* 任务计划跨过的饭点也计入当日占用。 */
       const pmm = mealMinutesInSpanOnDay(entryStartDate(entry), entryPlannedEndDate(entry), dateStr);
       if(pmm>0){ plannedMinToday += pmm; p.planned += pmm; }
     }
     /* 收集当天的实际执行区间（供全局与项目去重合并），并统计偏差用的量 */
-    const p2=proj(entry);
     included.forEach(s=>{
-      if(s.actualStart && sameDay(s.actualStart, dateStr)){
-        const st=new Date(s.actualStart).getTime();
-        const durMs = (s.status==='done' ? Math.max(1,s.actualMinutes||1) : Math.max(1,(now-new Date(s.actualStart))/60000))*60000;
-        const iv=[Math.max(st,dayStart), Math.min(st+durMs,dayEnd)];
-        globalIv.push(iv); p2._iv.push(iv);
-        if(s.status==='done'){ doneSteps++; actualMinOfDone+=Math.max(1,s.actualMinutes||1); plannedMinOfDone+=Math.max(1,s.minutes|0); }
-        if(s.status==='in_progress') inProgressSteps++;
+      if(!s.actualStart) return;
+      const st=new Date(s.actualStart).getTime();
+      if(!Number.isFinite(st)) return;
+      let actualEnd;
+      if(s.status==='done') actualEnd=st+Math.max(1,Number(s.actualMinutes)||1)*60000;
+      else if(s.status==='in_progress') actualEnd=now.getTime();
+      else return;
+      const iv=[Math.max(st,dayStart),Math.min(actualEnd,dayEnd)];
+      if(iv[1]<=iv[0]) return;
+      const p2=proj(entry);
+      globalIv.push(iv); p2._iv.push(iv); entryDailyIv.push(iv);
+      if(s.status==='done' && localDateStr(new Date(actualEnd))===dateStr){
+        doneSteps++;
+        actualMinOfDone+=Math.max(1,Number(s.actualMinutes)||1);
+        plannedMinOfDone+=Math.max(1,s.minutes|0);
       }
+      if(s.status==='in_progress') inProgressSteps++;
     });
-    /* C 口径：把该任务实际跨度覆盖到的饭点也并入区间（一起合并去重） */
-    const actS=entryActualStartDate(entry), actE=entryActualEndDate(entry);
-    if(actS && actE && actE>actS){
-      mealIntervalsOnDay(dateStr, actS.getTime(), actE.getTime()).forEach(iv=>{ globalIv.push(iv); p2._iv.push(iv); });
+    /* C 口径：只按该任务当天实际区间的首尾跨度补饭点，不能跨空白日期补算。 */
+    if(entryDailyIv.length){
+      const actualDayStart=Math.min(...entryDailyIv.map(iv=>iv[0]));
+      const actualDayEnd=Math.max(...entryDailyIv.map(iv=>iv[1]));
+      const mealIv=mealIntervalsOnDay(dateStr, actualDayStart, actualDayEnd);
+      if(mealIv.length){
+        const p2=proj(entry);
+        mealIv.forEach(iv=>{ globalIv.push(iv); p2._iv.push(iv); });
+      }
     }
   });
   /* 合并去重后的实际总工时（重叠只算一次） */
   const actualMin = mergedMinutes(globalIv);
   /* 当日饭点净计入量（合并后饭点区间与工作区间的实际占用，用于显示） */
   const mealIvAll = mealIntervalsOnDay(dateStr, dayStart, dayEnd);
-  const mealMinToday = mergedMinutes(globalIv.filter(iv=>mealIvAll.some(m=>iv[0]<m[1]&&iv[1]>m[0])).map(iv=>{
-    // 仅取与饭点相交的部分
-    let best=null;
-    mealIvAll.forEach(m=>{ const lo=Math.max(iv[0],m[0]), hi=Math.min(iv[1],m[1]); if(hi>lo) best=best?[Math.min(best[0],lo),Math.max(best[1],hi)]:[lo,hi]; });
-    return best||[0,0];
+  const mealOverlapIv=[];
+  globalIv.forEach(iv=>mealIvAll.forEach(meal=>{
+    const lo=Math.max(iv[0],meal[0]), hi=Math.min(iv[1],meal[1]);
+    if(hi>lo) mealOverlapIv.push([lo,hi]);
   }));
+  const mealMinToday = mergedMinutes(mealOverlapIv);
   Object.values(perProject).forEach(p=>{ p.actual=mergedMinutes(p._iv); delete p._iv; });
 
   const deviation = doneSteps ? Math.round(actualMinOfDone-plannedMinOfDone) : 0;
@@ -1129,19 +1383,30 @@ window.__editTitle = function(){
 };
 
 /* ---------- 主渲染 ---------- */
+function nowScrollTarget(sa, nowX){
+  const nameCell=sa.querySelector('tbody .namecol')||sa.querySelector('thead .namecol');
+  const timeCell=sa.querySelector('tbody .timecol')||sa.querySelector('thead .timecol');
+  const nameWidth=nameCell?nameCell.offsetWidth:0;
+  const timeWidth=timeCell?timeCell.offsetWidth:0;
+  const timeStyle=timeCell?getComputedStyle(timeCell):null;
+  const timeIsHorizontallySticky=!!timeStyle && timeStyle.position==='sticky' && timeStyle.left!=='auto';
+  const stickyWidth=nameWidth+(timeIsHorizontallySticky?timeWidth:0);
+  const timelineOrigin=nameWidth+timeWidth;
+  const visibleCenter=stickyWidth+Math.max(0,sa.clientWidth-stickyWidth)/2;
+  const maxScroll=Math.max(0,sa.scrollWidth-sa.clientWidth);
+  return Math.min(maxScroll,Math.max(0,timelineOrigin+nowX-visibleCenter));
+}
 function render(){
   if(NEEDS_SETUP){ renderSetupScreen(); return; }
   const app=document.getElementById('app');
   if(!loaded){ app.innerHTML='<div class="empty">连接云数据库中…</div>'; return; }
-  if(state.title) document.title=state.title;
+  if(activeBoardStepDragCleanup) activeBoardStepDragCleanup();
+  document.title=state.title||'生产计划甘特图看板';
 
   const {start, end}=boardRange();
   const now=new Date();
   const todayStr=localDateStr(now);
-  if(groupCollapseOverrideDate!==todayStr){
-    groupCollapseOverrides.clear();
-    groupCollapseOverrideDate=todayStr;
-  }
+  ensureCollapseOverrideDate(todayStr);
 
   /* 分段带：往日整天折叠成窄条；展开日在"工作时段"模式下把夜间(0-8/20-24)也压成窄条 */
   const NIGHT_W = 26, WORK_S = 8, WORK_E = 20;
@@ -1189,7 +1454,7 @@ function render(){
   let headHTML='';
   dayInfos.forEach(di=>{
     const off = dayOffInfo(di.start);
-    const badge = off.off ? `<span class="day-badge ${off.type}">${off.label}</span>` : '';
+    const badge = off.type==='holiday' ? `<span class="day-badge ${off.type}">${off.label}</span>` : '';
     headHTML += `<div class="th-day ${di.collapsed?'collapsed':''}" style="left:${di.x}px; width:${di.width}px">${fmtDay(di.start)}${badge}${di.collapsed?' ▸':''}</div>`;
     if(!di.collapsed){
       const stepH = zoomPx>=45 ? 1 : 3;
@@ -1256,7 +1521,7 @@ function render(){
       const gCaret = gCollapsed ? '▸' : '▾';
       const gCount = group.entries.length;
       const gDone = group.entries.filter(e=>taskInfo(e).finished).length;
-      rowsHTML += `<tr class="group-row" data-group="${escapeHTML(group.project)}"><td class="namecol"><div class="group-label" role="button" tabindex="0" data-project="${escapeHTML(group.project)}" style="cursor:pointer;"><span class="group-caret">${gCaret}</span> ${escapeHTML(group.project)} <span class="group-count">${gDone}/${gCount} 任务</span></div></td><td class="timecol"></td><td></td></tr>`;
+      rowsHTML += `<tr class="group-row" data-group="${escapeHTML(group.project)}"><td class="namecol"><div class="group-label" role="button" tabindex="0" aria-expanded="${gCollapsed?'false':'true'}" data-project="${escapeHTML(group.project)}" style="cursor:pointer;"><span class="group-caret">${gCaret}</span> ${escapeHTML(group.project)} <span class="group-count">${gDone}/${gCount} 任务</span></div></td><td class="timecol"></td><td></td></tr>`;
       if(gCollapsed) return;
       group.entries.forEach(entry=>{
         const {segments, totalMin}=computeSchedule(entry);
@@ -1268,11 +1533,10 @@ function render(){
         const flashCls = entry.id===flashId ? ' flash-row' : '';
 
         const pStart=entryStartDate(entry), pEnd=entryPlannedEndDate(entry);
-        const crossDay = localDateStr(pStart)!==localDateStr(pEnd);
-        const planText = fmtHM(pStart)+'–'+(crossDay?fmtDay(pEnd).slice(0,5)+' ':'')+fmtHM(pEnd);
+        const planText = fmtTimeRange(pStart,pEnd);
         const taskTimeCol = `<td class="timecol">
           <div class="tc-line"><span class="tc-k">计划</span>${planText}</div>
-          ${info.finished&&info.finishTime?`<div class="tc-line done"><span class="tc-k">完成</span>${fmtHM(info.finishTime)}</div>`:''}
+          ${info.finished&&info.finishTime?`<div class="tc-line done"><span class="tc-k">完成</span>${fmtEntryMoment(entry,info.finishTime)}</div>`:''}
         </td>`;
 
         /* 一键推进：进行中→「完成当前」，否则→「开始下一道」；折叠状态下也能直接操作 */
@@ -1292,33 +1556,35 @@ function render(){
         if(info.finished){
           const diff=info.totalActual-info.totalPlanned;
           const diffText = info.totalActual===0?'' : (diff===0?'，与预计持平':(diff>0?`，比预计多 ${fmtMin(diff)}`:`，比预计省 ${fmtMin(-diff)}`));
-          headLine = `<span class="done-badge">✔ 已完成</span> <span class="task-meta">${info.finishTime?fmtHM(info.finishTime)+' 完成 · ':''}实际总用时 ${fmtMin(info.totalActual)}（预计 ${fmtMin(info.totalPlanned)}${diffText}）</span>`;
+          headLine = `<span class="done-badge">✔ 已完成</span> <span class="task-meta">${info.finishTime?fmtEntryMoment(entry,info.finishTime)+' 完成 · ':''}实际总用时 ${fmtMin(info.totalActual)}（预计 ${fmtMin(info.totalPlanned)}${diffText}）</span>`;
         } else {
           let progressText = '';
           if(info.currentText) progressText = ' · '+info.currentText+(info.nextLabel?'，下一步「'+info.nextLabel+'」':'');
           headLine = `<span class="task-meta">${fmtDay(entryStartDate(entry))} ${fmtHM(entryStartDate(entry))} 开始 · 共${totalMin}分钟 · 完成 ${pct}%${progressText}</span>`;
         }
 
-        const isCollapsed = collapsedTaskIds.has(entry.id);
-        const inclCount = entry.steps.filter(s=>s.included!==false).length;
+        const isCollapsed = taskIsCollapsed(entry,todayStr);
         const focusCls = entry.id===focusTaskId ? ' focus-row' : '';
         if(isCollapsed){
           /* 折叠态：整块收成一张紧凑单行卡片，右侧时间栏显示计划/完成时间 */
-          const doneMark = info.finished ? '<span class="temp-badge" style="background:var(--green)">已完成</span>' : (info.anyRunning?'<span class="temp-badge" style="background:var(--amber)">进行中</span>':'');
+          const doneMark = info.finished
+            ? '<span class="temp-badge" style="background:var(--green)">已完成</span>'
+            : (info.anyRunning?'<span class="temp-badge" style="background:var(--amber)">进行中</span>':(!entryHasActualOnDate(entry,todayStr)?'<span class="idle-badge">今日未参与</span>':''));
           const collapsedTimeCol = `<td class="timecol">
-            <div class="tc-line"><span class="tc-k">计划</span>${fmtHM(entryStartDate(entry))}–${fmtHM(entryPlannedEndDate(entry))}</div>
-            ${info.finished&&info.finishTime?`<div class="tc-line done"><span class="tc-k">完成</span>${fmtHM(info.finishTime)}</div>`:`<div class="tc-line dim"><span class="tc-k">进度</span>${pct}%</div>`}
+            <div class="tc-line"><span class="tc-k">计划</span>${planText}</div>
+            ${info.finished&&info.finishTime?`<div class="tc-line done"><span class="tc-k">完成</span>${fmtEntryMoment(entry,info.finishTime)}</div>`:`<div class="tc-line dim"><span class="tc-k">进度</span>${pct}%</div>`}
           </td>`;
           rowsHTML += `<tr class="task-row task-collapsed-card${flashCls}${focusCls}" data-task-id="${entry.id}">
             <td class="namecol">
               <div class="cc-line">
-                <span class="task-caret" onclick="__toggleTask('${entry.id}')" title="展开工序">▸</span>
-                <span class="task-name" style="cursor:pointer; flex:1;" onclick="__toggleTask('${entry.id}')">${escapeHTML(entry.name)}</span>
+                <button type="button" class="task-caret" onclick="__toggleTask('${entry.id}')" aria-expanded="false" title="展开工序">▸</button>
+                <button type="button" class="task-name task-name-toggle" style="flex:1;" onclick="__toggleTask('${entry.id}')" aria-expanded="false">${escapeHTML(entry.name)}</button>
                 ${entry.temporary?'<span class="temp-badge">临时</span>':''}
                 ${doneMark}
                 <span class="cc-pct">${pct}%</span>
               </div>
               <div class="progress-track" style="margin-top:5px;"><div class="progress-fill" style="width:${pct}%"></div></div>
+              ${quickBtn?`<div class="task-actions">${quickBtn}</div>`:''}
             </td>
             ${collapsedTimeCol}
             <td class="timelinecell">
@@ -1333,8 +1599,8 @@ function render(){
         rowsHTML += `<tr class="task-row${flashCls}${focusCls}" data-task-id="${entry.id}">
           <td class="namecol">
             <div class="task-head">
-              <span class="task-caret" onclick="__toggleTask('${entry.id}')" title="折叠工序">▾</span>
-              <span class="task-name" style="cursor:pointer;" onclick="__toggleTask('${entry.id}')" title="点击折叠工序">${escapeHTML(entry.name)}</span>
+              <button type="button" class="task-caret" onclick="__toggleTask('${entry.id}')" aria-expanded="true" title="折叠工序">▾</button>
+              <button type="button" class="task-name task-name-toggle" onclick="__toggleTask('${entry.id}')" aria-expanded="true" title="点击折叠工序">${escapeHTML(entry.name)}</button>
               ${entry.temporary?'<span class="temp-badge">临时</span>':''}
               ${headLine}
             </div>
@@ -1342,7 +1608,7 @@ function render(){
             <div class="task-actions">
               ${quickBtn}
               <button class="mini-btn" onclick="__toggleTask('${entry.id}')">▾ 折叠工序</button>
-              <button class="mini-btn" onclick="__editEntry('${entry.id}')">＋加工序 / 编辑</button>
+              <button class="mini-btn" onclick="__editEntry('${entry.id}')">编辑任务 / 工序</button>
               <button class="mini-btn" onclick="__duplicateEntry('${entry.id}')">复制到当前</button>
               <button class="mini-btn danger" onclick="__deleteEntry('${entry.id}')">删除</button>
             </div>
@@ -1379,7 +1645,7 @@ function render(){
               onclick="event.stopPropagation(); __focusTask('${entry.id}')"
               title="实际：${fmtHM(aS)} 开始${st.status==='done'?'，用时 '+Math.round(aMins)+' 分钟':'，进行中'}">${(ax2-ax1)>=34?'<span class="in-label">'+escapeHTML(st.label)+'</span>':''}</div>`;
             if(st.status==='done'){
-              actualText = fmtHM(aS)+'–'+fmtHM(aE);
+              actualText = fmtTimeRange(aS,aE);
               actualCls = 'done';
             } else {
               const over = aMins > st.minutes;
@@ -1387,8 +1653,8 @@ function render(){
               actualCls = over ? 'over' : 'prog';
             }
           }
-          const stepTimeCol = `<td class="timecol" style="cursor:pointer;" onclick="__editTime('${entry.id}','${st.id}')" title="点击修改实际时间">
-            <div class="tc-line"><span class="tc-k">预计</span>${fmtHM(bStart)}–${fmtHM(bEnd)}</div>
+          const stepTimeCol = `<td class="timecol step-time-editor" role="button" tabindex="0" data-entry-id="${escapeHTML(entry.id)}" data-step-id="${escapeHTML(st.id)}" style="cursor:pointer;" onclick="__editTime('${entry.id}','${st.id}')" title="点击修改实际时间">
+            <div class="tc-line"><span class="tc-k">预计</span>${fmtTimeRange(bStart,bEnd)}</div>
             <div class="tc-line ${actualCls}"><span class="tc-k">实际</span>${actualText}</div>
           </td>`;
 
@@ -1399,9 +1665,10 @@ function render(){
               ? `<button class="step-btn finish" onclick="__toggleStep('${entry.id}','${st.id}')">完成</button>`
               : `<button class="step-btn undo" onclick="__toggleStep('${entry.id}','${st.id}')" title="点击撤销">✓</button>`);
 
-          rowsHTML += `<tr class="step-row ${st.status==='done'?'is-done':''}${flashCls}">
+          rowsHTML += `<tr class="step-row ${st.status==='done'?'is-done':''}${flashCls}" data-entry-id="${escapeHTML(entry.id)}" data-step-id="${escapeHTML(st.id)}">
             <td class="namecol">
               <div class="step-line">
+                <button type="button" class="board-step-drag-handle" data-entry-id="${escapeHTML(entry.id)}" data-step-id="${escapeHTML(st.id)}" aria-label="拖动调整「${escapeHTML(st.label)}」的工序顺序" title="拖动调整顺序，计划时间会自动重排">↕</button>
                 <span class="step-status-ic ${statusCls}" onclick="__toggleStep('${entry.id}','${st.id}')" title="点击切换：待开始 → 进行中 → 完成">${statusIcon}</span>
                 <span class="step-label-text">${escapeHTML(st.label)}</span>
                 <span class="step-min">${st.minutes}分</span>
@@ -1450,7 +1717,7 @@ function render(){
         <button class="btn" onclick="__openMeals()">🍽 用餐时间</button>
         <button class="btn" onclick="__openProjectList()">📁 项目列表</button>
         <button class="btn" onclick="__openTemplates()">默认工序库</button>
-        <button class="btn primary" onclick="__openNew(false)">＋新建任务</button>
+        <button class="btn primary desktop-new-btn" onclick="__openNew(false)">＋新建任务</button>
         <button class="btn" onclick="__openNew(true)">＋临时插单</button>
       </div>
     </div>
@@ -1501,11 +1768,17 @@ function render(){
       if(e.key==='Enter' || e.key===' '){ e.preventDefault(); toggle(); }
     };
   });
+  app.querySelectorAll('.board-step-drag-handle').forEach(bindBoardStepDragHandle);
+  app.querySelectorAll('.step-time-editor').forEach(cell=>{
+    cell.onkeydown=(e)=>{
+      if(e.key==='Enter'||e.key===' '){ e.preventDefault(); window.__editTime(cell.dataset.entryId,cell.dataset.stepId); }
+    };
+  });
 
   const sa=document.getElementById('scrollArea');
   if(sa){
     if(!didAutoScroll && showNow){
-      sa.scrollLeft=Math.max(0, nowX-250);
+      sa.scrollLeft=nowScrollTarget(sa,nowX);
       didAutoScroll=true;
     } else {
       /* 刷新/同步后保持你滚动到的位置，不再被拽回 */
@@ -1514,6 +1787,14 @@ function render(){
     }
     sa.addEventListener('scroll', ()=>{ savedScrollLeft=sa.scrollLeft; savedScrollTop=sa.scrollTop; }, {passive:true});
   }
+  if(pendingBoardStepFocus){
+    const wanted=pendingBoardStepFocus;
+    pendingBoardStepFocus=null;
+    requestAnimationFrame(()=>{
+      const handle=[...app.querySelectorAll('.board-step-drag-handle')].find(item=>item.dataset.entryId===wanted.entryId&&item.dataset.stepId===wanted.stepId);
+      if(handle){ try{ handle.focus({preventScroll:true}); }catch(_e){ handle.focus(); } }
+    });
+  }
   window.__nowX = nowX;
 }
 
@@ -1521,7 +1802,7 @@ function render(){
 window.__gotoNow = function(){
   const sa=document.getElementById('scrollArea');
   if(sa && typeof window.__nowX==='number'){
-    sa.scrollTo({left:Math.max(0, window.__nowX-250), behavior:'smooth'});
+    sa.scrollTo({left:nowScrollTarget(sa,window.__nowX), behavior:'smooth'});
   }
 };
 
@@ -1583,9 +1864,9 @@ window.__openMeals = function(){
     sync();
     for(const mb of working){ if(mb.end<=mb.start){ showToast('「'+mb.label+'」结束时间要晚于开始时间。'); return; } }
     state.meals = working;
-    await saveBoard();
+    const saved=await saveBoard();
     overlay.remove();
-    showToast('用餐时间已更新，排程与工时已同步。');
+    showToast(saved?'用餐时间已更新，排程与工时已同步。':'用餐时间已保留在本页，待手动同步。');
   };
 };
 
@@ -1638,17 +1919,20 @@ window.__openProjectList = function(){
 window.__closeProjectList = function(){ const o=document.getElementById('projListOverlay'); if(o) o.remove(); };
 
 window.__toggleTask = function(id){
-  if(collapsedTaskIds.has(id)) collapsedTaskIds.delete(id);
-  else collapsedTaskIds.add(id);
+  const entry=state.entries.find(e=>e.id===id);
+  if(!entry) return;
+  const todayStr=localDateStr(new Date());
+  taskCollapseOverrides.set(id,!taskIsCollapsed(entry,todayStr));
   render();
 };
 
 /* 点甘特色条 → 定位左侧对应任务：展开该任务、滚动到它、整行高亮闪一下 */
 window.__focusTask = function(id){
-  collapsedTaskIds.delete(id);
   const entry = state.entries.find(e=>e.id===id);
   if(!entry) return;
   if(!passesFilter(entry)){ filterMode='all'; searchQuery=''; }
+  ensureCollapseOverrideDate();
+  taskCollapseOverrides.set(id,false);
   groupCollapseOverrides.set(projectKey(entry), false);
   flashId = id;
   focusTaskId = id;
@@ -1674,6 +1958,9 @@ window.__toggleStep = async function(entryId, stepId){
   } else {
     st.status='pending'; st.actualStart=null; st.actualMinutes=null;
   }
+  ensureCollapseOverrideDate();
+  if(taskInfo(entry).finished) taskCollapseOverrides.delete(entryId);
+  else taskCollapseOverrides.set(entryId,false);
   flashId = entryId;
   try{ if(navigator.vibrate) navigator.vibrate(st.status==='done'?[25,40,25]:15); }catch(_e){}
   await saveBoard();
@@ -1752,6 +2039,8 @@ window.__editTime = function(entryId, stepId){
   const clearBtn=document.getElementById('tClear');
   if(clearBtn) clearBtn.onclick=async ()=>{
     st.status='pending'; st.actualStart=null; st.actualMinutes=null;
+    ensureCollapseOverrideDate();
+    taskCollapseOverrides.set(entryId,false);
     flashId = entryId;
     overlay.remove(); await saveBoard(); showToast('已清除该工序的实际时间记录。');
   };
@@ -1764,6 +2053,9 @@ window.__editTime = function(entryId, stepId){
     st.actualStart=sD.toISOString();
     st.actualMinutes=Math.max(1, Math.round((eD-sD)/60000));
     st.status='done';
+    ensureCollapseOverrideDate();
+    if(taskInfo(entry).finished) taskCollapseOverrides.delete(entryId);
+    else taskCollapseOverrides.set(entryId,false);
     flashId = entryId;
     overlay.remove();
     await saveBoard();
@@ -1778,7 +2070,10 @@ function freshStepFromTemplate(t){
 function blankStep(){
   return {id:uid(), label:'', color:nextColor(), minutes:10, included:true, status:'pending', actualStart:null, actualMinutes:null};
 }
-function defaultStepsForEntry(){ return state.templates.slice(0,3).map(t=>freshStepFromTemplate(t)); }
+function defaultStepsForEntry(){
+  const source=state.templates.length?state.templates:STEP_TEMPLATES_DEFAULT;
+  return source.slice(0,3).map(t=>freshStepFromTemplate(t));
+}
 
 window.__openNew = function(temporary){
   editingId=null;
@@ -1819,7 +2114,7 @@ window.__setFilter=function(m){ filterMode=m; render(); };
 
 /* 💾 数据备份与恢复（JSON 文件，含任务、模板、标题） */
 window.__exportBackup=function(){
-  const payload={ exportedAt:new Date().toISOString(), title:state.title||'', templates:state.templates, entries:state.entries };
+  const payload={ exportedAt:new Date().toISOString(), title:state.title||'', templates:state.templates, meals:state.meals||[], entries:state.entries };
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -1844,12 +2139,15 @@ window.__importBackup=function(){
           const data=JSON.parse(r.result);
           if(!data || !Array.isArray(data.entries)) throw new Error('文件格式不对');
           if(!confirm('将用备份（'+data.entries.length+' 个任务）覆盖当前云端数据，确定？（可撤销）')) return;
-          snapshotForUndo('导入备份前的数据');
+          const importUndo=snapshotForUndo('导入备份前的数据',true);
           state.entries=normalizeEntries(data.entries);
-          if(Array.isArray(data.templates)&&data.templates.length) state.templates=data.templates;
-          if(data.title) state.title=data.title;
-          await saveBoard();
-          showUndoToast('备份已导入并同步云端。');
+          taskCollapseOverrides.clear();
+          groupCollapseOverrides.clear();
+          if(Array.isArray(data.templates)) state.templates=data.templates;
+          if(Array.isArray(data.meals)) state.meals=data.meals;
+          if(typeof data.title==='string') state.title=data.title;
+          const saved=await saveBoard();
+          showUndoToast(saved?'备份已导入并同步云端。':'备份已导入到本页，待手动同步。',importUndo);
         }catch(err){ showToast('导入失败：'+err.message); }
       };
       r.readAsText(f);
@@ -1863,33 +2161,48 @@ window.__setSearch=function(v){
   if(sb){ sb.focus(); try{ sb.setSelectionRange(v.length,v.length); }catch(_e){} }
 };
 
-function snapshotForUndo(label){
-  undoSnapshot = JSON.stringify(state.entries);
-  undoLabel = label;
+function snapshotForUndo(label, fullState=false){
+  return {
+    snapshot:JSON.stringify(fullState?state:state.entries),
+    label,
+    fullState,
+    epoch:mutationEpoch+1
+  };
 }
-function showUndoToast(msg){
+function showUndoToast(msg, undo){
+  if(!undo || undo.epoch!==mutationEpoch){ showToast(msg); return; }
+  if(activeUndoToast) activeUndoToast.remove();
   const t=document.createElement('div');
   t.className='toast';
   t.innerHTML = escapeHTML(msg)+' <button class="undo-btn" id="undoBtn">撤销</button>';
   document.body.appendChild(t);
-  const timer=setTimeout(()=>t.remove(), 6000);
+  activeUndoToast=t;
+  const timer=setTimeout(()=>{ t.remove(); if(activeUndoToast===t) activeUndoToast=null; }, 6000);
   t.querySelector('#undoBtn').onclick=async ()=>{
-    clearTimeout(timer); t.remove();
-    if(!undoSnapshot) return;
-    state.entries = normalizeEntries(JSON.parse(undoSnapshot));
-    undoSnapshot=null;
+    clearTimeout(timer); t.remove(); if(activeUndoToast===t) activeUndoToast=null;
+    if(undo.epoch!==mutationEpoch){ showToast('后续已有新改动，这一步不能再撤销。'); return; }
+    if(undo.fullState){
+      state=JSON.parse(undo.snapshot);
+      state.entries=normalizeEntries(state.entries||[]);
+      if(!Array.isArray(state.templates)) state.templates=STEP_TEMPLATES_DEFAULT.map(s=>({...s}));
+    } else {
+      state.entries=normalizeEntries(JSON.parse(undo.snapshot));
+    }
+    taskCollapseOverrides.clear();
+    groupCollapseOverrides.clear();
     await saveBoard();
-    showToast('已撤销：'+undoLabel);
+    showToast('已撤销：'+undo.label);
   };
 }
 
 window.__deleteEntry = async function(id){
   const en=state.entries.find(e=>e.id===id);
-  if(!confirm('确定要从看板上移除这条任务吗？')) return;
-  snapshotForUndo('删除「'+(en?en.name:'任务')+'」');
+  if(!confirm('确定要从看板上移除这条任务吗？（删除后可撤销）')) return;
+  const deleteUndo=snapshotForUndo('删除「'+(en?en.name:'任务')+'」');
   state.entries=state.entries.filter(e=>e.id!==id);
+  taskCollapseOverrides.delete(id);
   await saveBoard();
-  showUndoToast('任务已删除。');
+  showUndoToast('任务已删除。',deleteUndo);
 };
 
 /* ⚡ 按计划一键完成该任务剩余全部工序（补录场景），可撤销 */
@@ -1900,16 +2213,17 @@ window.__finishAllPlanned = async function(id){
   const remain=segments.filter(g=>g.step.status!=='done');
   if(!remain.length){ showToast('该任务已全部完成。'); return; }
   if(!confirm('将按计划时间补录并完成剩余 '+remain.length+' 道工序，确定？（可撤销）')) return;
-  snapshotForUndo('批量完成「'+entry.name+'」剩余工序');
+  const finishUndo=snapshotForUndo('批量完成「'+entry.name+'」剩余工序');
   const base=entryStartDate(entry).getTime();
   remain.forEach(g=>{
     g.step.actualStart=new Date(base+g.startMin*60000).toISOString();
     g.step.actualMinutes=g.durMin;
     g.step.status='done';
   });
+  taskCollapseOverrides.delete(id);
   flashId=id;
   await saveBoard();
-  showUndoToast('已按计划完成 '+remain.length+' 道工序。');
+  showUndoToast('已按计划完成 '+remain.length+' 道工序。',finishUndo);
 };
 
 function stepRowHTML(s, idx){
@@ -1917,7 +2231,7 @@ function stepRowHTML(s, idx){
     <td><input type="checkbox" data-step-idx="${idx}" class="stepInclude" ${s.included!==false?'checked':''}></td>
     <td><span class="swatch" style="background:${s.color}"></span></td>
     <td><input type="text" class="stepLabel" data-step-idx="${idx}" placeholder="工序名称" value="${escapeHTML(s.label)}"></td>
-    <td><input type="number" min="1" class="stepMinutes" data-step-idx="${idx}" value="${s.minutes}"> 分</td>
+    <td class="duration-cell"><input type="number" min="1" class="stepMinutes" data-step-idx="${idx}" value="${s.minutes}"> 分</td>
     <td class="col-status">${s.status==='done'?'<span style="color:var(--green); font-size:11px;">已完成</span>':(s.status==='in_progress'?'<span style="color:var(--amber); font-size:11px;">进行中</span>':'')}</td>
     <td class="reorder-cell"><button type="button" class="drag-handle" data-drag-idx="${idx}" aria-label="拖动调整工序顺序" title="拖动排序，也可用上下方向键">↕</button></td>
     <td><button type="button" class="del-row" data-del-idx="${idx}" title="删除此工序">×</button></td>
@@ -2000,14 +2314,15 @@ function openModal(draft){
   /* 编辑已有任务时：可直接在弹窗里删除整个任务 */
   const fDelete=document.getElementById('fDelete');
   if(fDelete) fDelete.onclick=async ()=>{
-    snapshotForUndo('删除任务');
-    if(!confirm('确定要删除整个任务及其所有工序记录吗？此操作不可撤销。')) return;
+    const target=state.entries.find(e=>e.id===editingId);
+    if(!confirm('确定要删除整个任务及其所有工序记录吗？（删除后可撤销）')) return;
+    const deleteUndo=snapshotForUndo('删除「'+(target?target.name:'任务')+'」');
     const idToDel=editingId;
     state.entries=state.entries.filter(e=>e.id!==idToDel);
-    collapsedTaskIds.delete(idToDel);
+    taskCollapseOverrides.delete(idToDel);
     __closeModal();
     await saveBoard();
-    showToast('任务已删除。');
+    showUndoToast('任务已删除。',deleteUndo);
   };
 
   /* 节假日/周末提示：所选开始日期是休息日时给出顺延按钮 */
@@ -2031,10 +2346,10 @@ function openModal(draft){
   document.getElementById('fDate').addEventListener('change', updateDateHint);
   updateDateHint();
 
-  /* 键盘便捷：Enter 保存（输入框内），Esc 关闭；打开即聚焦任务名 */
+  /* 键盘便捷：Ctrl/Cmd+Enter 保存，Esc 关闭；普通回车留给输入法。 */
   overlay.addEventListener('keydown', (e)=>{
     if(e.key==='Escape'){ e.preventDefault(); __closeModal(); }
-    else if(e.key==='Enter' && e.target && e.target.tagName==='INPUT' && e.target.type!=='checkbox'){
+    else if(e.key==='Enter' && (e.ctrlKey||e.metaKey)){
       e.preventDefault(); document.getElementById('fSave').click();
     }
   });
@@ -2216,18 +2531,19 @@ function openModal(draft){
     if(editingId){
       const entry=state.entries.find(e=>e.id===editingId);
       Object.assign(entry, {project, name, startISO, temporary, steps});
-      collapsedTaskIds.delete(editingId); // 编辑后自动展开，方便查看改动
+      ensureCollapseOverrideDate();
+      taskCollapseOverrides.set(editingId,false); // 编辑后自动展开，方便查看改动
       flashId = editingId;
     } else {
       const newId = uid();
-      state.entries.forEach(e=>collapsedTaskIds.add(e.id)); // 新建任务时折叠旧任务，聚焦新任务
       state.entries.push({id:newId, project, name, startISO, temporary, steps});
-      collapsedTaskIds.delete(newId);
+      ensureCollapseOverrideDate();
+      taskCollapseOverrides.set(newId,false);
       flashId = newId;
     }
-    await saveBoard();
+    const saved=await saveBoard();
     __closeModal();
-    showToast('已保存到云端。');
+    showToast(saved?'已保存到云端。':'任务已保留在本页，待手动同步。');
   };
 }
 window.__closeModal = function(){
@@ -2246,7 +2562,7 @@ window.__openTemplates = function(){
     return working.map((t,idx)=>`<tr>
       <td><span class="swatch" style="background:${t.color}"></span></td>
       <td><input type="text" class="tLabel" data-idx="${idx}" value="${escapeHTML(t.label)}"></td>
-      <td><input type="number" min="1" class="tMinutes" data-idx="${idx}" value="${t.minutes}"> 分</td>
+      <td class="duration-cell"><input type="number" min="1" class="tMinutes" data-idx="${idx}" value="${t.minutes}"> 分</td>
       <td><button type="button" class="del-row" data-del-idx="${idx}">×</button></td>
     </tr>`).join('');
   }
@@ -2269,7 +2585,7 @@ window.__openTemplates = function(){
   overlay.addEventListener('click',(e)=>{ if(e.target===overlay) __closeTemplates(); });
   overlay.addEventListener('keydown',(e)=>{
     if(e.key==='Escape'){ e.preventDefault(); __closeTemplates(); }
-    else if(e.key==='Enter' && e.target && e.target.tagName==='INPUT'){ e.preventDefault(); document.getElementById('tSave').click(); }
+    else if(e.key==='Enter' && (e.ctrlKey||e.metaKey)){ e.preventDefault(); document.getElementById('tSave').click(); }
   });
 
   function rerender(){ document.getElementById('tBody').innerHTML=rowsHTML(); bind(); }
@@ -2302,11 +2618,11 @@ window.__openTemplates = function(){
       t.minutes=Math.max(1, parseInt(t.minutes,10)||10);
     });
     state.templates=working;
-    await saveBoard();
+    const saved=await saveBoard();
     __closeTemplates();
     /* 通知打开中的任务弹窗刷新快速选择标签 */
     document.dispatchEvent(new CustomEvent('gantt-templates-updated'));
-    showToast('工序模板已更新，快速选择标签已同步。');
+    showToast(saved?'工序模板已更新，快速选择标签已同步。':'工序模板已保留在本页，待手动同步。');
   };
 };
 window.__closeTemplates = function(){
