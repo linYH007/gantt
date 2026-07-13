@@ -210,7 +210,7 @@
   .empty b{color:var(--text); display:block; font-size:16px; margin-bottom:6px;}
 
   /* ===== 弹窗 ===== */
-  .overlay{position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto; z-index:50;}
+  .overlay{position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto; z-index:70;}
   .modal{background:#fff; border-radius:14px; width:100%; max-width:680px; padding:24px; box-shadow:0 10px 40px rgba(16,24,40,.2);}
   .modal h2{margin:0 0 4px; font-size:17px;}
   .modal .sub{color:var(--text-dim); font-size:12.5px; margin-bottom:16px;}
@@ -290,9 +290,14 @@
   /* 实际用时超预计 */
   .tc-line.over{color:var(--red); font-weight:600;}
   /* 工序调序 */
-  .reorder-cell{white-space:nowrap;}
-  .mv-btn{background:#fff; border:1px solid var(--line); border-radius:5px; width:22px; height:22px; font-size:11px; cursor:pointer; color:var(--text-dim); padding:0;}
-  .mv-btn:hover{color:var(--blue); border-color:#bcd7f5;}
+  .reorder-cell{white-space:nowrap; width:38px; text-align:center;}
+  .drag-handle{background:#fff; border:1px solid var(--line); border-radius:5px; width:28px; height:28px; font-size:16px;
+    line-height:1; cursor:grab; color:var(--text-dim); padding:0; touch-action:none; user-select:none;}
+  .drag-handle:hover,.drag-handle:focus-visible{color:var(--blue); border-color:#bcd7f5; outline:none; box-shadow:0 0 0 3px rgba(74,144,226,.12);}
+  .drag-handle:active{cursor:grabbing;}
+  .steps-table tr.step-dragging{opacity:.48;}
+  .steps-table tr.step-drop-before td{box-shadow:inset 0 2px 0 var(--blue);}
+  .steps-table tr.step-drop-after td{box-shadow:inset 0 -2px 0 var(--blue);}
   /* 手机浮动新建按钮 */
   #fabNew{position:fixed; right:18px; bottom:22px; width:54px; height:54px; border-radius:50%; border:none;
     background:var(--blue); color:#fff; font-size:28px; font-weight:600; cursor:pointer; z-index:60;
@@ -341,7 +346,7 @@
     .steps-table input[type=number]{width:52px; font-size:12px;}
     .steps-table input[type=text]{font-size:13px; padding:7px 8px;}
     .steps-table .col-status{display:none;}
-    .mv-btn{width:26px; height:26px;}
+    .drag-handle{width:40px; height:40px;}
     .quickadd button{font-size:12px; padding:5px 10px;}
     /* 记时/用餐弹窗输入更大好点 */
     .field input[type=datetime-local], .field input[type=time]{font-size:14px; padding:10px;}
@@ -454,7 +459,10 @@ function nextWorkday(d){
 
 /* 数据变动后要高亮的任务（图表互动反馈） */
 let flashId = null;
-let collapsedGroups = new Set();   // 折叠起来的项目（点项目名展开看任务列表）
+/* 项目组手动折叠覆盖：project => true(折叠) / false(展开)。
+   无覆盖时，“全部”视图会自动折叠当日无关的项目。 */
+let groupCollapseOverrides = new Map();
+let groupCollapseOverrideDate = '';
 let focusTaskId = null;            // 本次要高亮定位的任务
 function fmtHM(d){ return _bjHMFmt.format(d); }
 function fmtDay(d){ const p=bjParts(d); const dw=['周日','周一','周二','周三','周四','周五','周六'][bjDow(d)]; return String(p.mo).padStart(2,'0')+'/'+String(p.da).padStart(2,'0')+dw; }
@@ -798,10 +806,38 @@ function taskSortKey(entry){
   return new Date(entry.startISO).getTime() + 1e15; // 未开始的排到所有已开始之后，内部再按计划时间
 }
 
+function projectKey(entry){ return (entry.project||'').trim()||'（未分类项目）'; }
+function entryIsOnDate(entry, dateStr){
+  const p=dateStr.split('-');
+  const dayStart=bjMake(+p[0],+p[1],+p[2],0,0).getTime();
+  const dayEnd=dayStart+86400000;
+  const plannedStart=entryStartDate(entry).getTime();
+  const plannedEnd=entryPlannedEndDate(entry).getTime();
+  if(plannedStart<dayEnd && plannedEnd>dayStart) return true;
+  const included=(entry.steps||[]).filter(s=>s.included!==false);
+  const now=Date.now();
+  return included.some(s=>{
+    if(!s.actualStart) return false;
+    const actualStart=new Date(s.actualStart).getTime();
+    const actualEnd=s.status==='done'
+      ? actualStart+Math.max(1,s.actualMinutes||1)*60000
+      : now;
+    return actualStart<dayEnd && actualEnd>dayStart;
+  });
+}
+function projectIsOnDate(project, dateStr){
+  return state.entries.some(entry=>projectKey(entry)===project && entryIsOnDate(entry, dateStr));
+}
+function groupIsCollapsed(project, dateStr){
+  /* 搜索或专项筛选时直接展开，避免命中的任务被项目头隐藏。 */
+  if(filterMode!=='all' || searchQuery) return false;
+  if(groupCollapseOverrides.has(project)) return groupCollapseOverrides.get(project);
+  return !projectIsOnDate(project, dateStr);
+}
 function groupByProject(entries){
   const groups={}; const order=[];
   entries.forEach(en=>{
-    const key=(en.project||'').trim()||'（未分类项目）';
+    const key=projectKey(en);
     if(!groups[key]){ groups[key]=[]; order.push(key); }
     groups[key].push(en);
   });
@@ -1102,6 +1138,10 @@ function render(){
   const {start, end}=boardRange();
   const now=new Date();
   const todayStr=localDateStr(now);
+  if(groupCollapseOverrideDate!==todayStr){
+    groupCollapseOverrides.clear();
+    groupCollapseOverrideDate=todayStr;
+  }
 
   /* 分段带：往日整天折叠成窄条；展开日在"工作时段"模式下把夜间(0-8/20-24)也压成窄条 */
   const NIGHT_W = 26, WORK_S = 8, WORK_E = 20;
@@ -1212,11 +1252,11 @@ function render(){
   } else {
     const groups=groupByProject(visibleEntries);
     groups.forEach(group=>{
-      const gCollapsed = collapsedGroups.has(group.project);
+      const gCollapsed = groupIsCollapsed(group.project, todayStr);
       const gCaret = gCollapsed ? '▸' : '▾';
       const gCount = group.entries.length;
       const gDone = group.entries.filter(e=>taskInfo(e).finished).length;
-      rowsHTML += `<tr class="group-row" data-group="${escapeHTML(group.project)}"><td class="namecol"><div class="group-label" style="cursor:pointer;" onclick="__toggleGroup('${escapeHTML(group.project).replace(/'/g,"\\\\'")}')"><span class="group-caret">${gCaret}</span> ${escapeHTML(group.project)} <span class="group-count">${gDone}/${gCount} 任务</span></div></td><td class="timecol"></td><td></td></tr>`;
+      rowsHTML += `<tr class="group-row" data-group="${escapeHTML(group.project)}"><td class="namecol"><div class="group-label" role="button" tabindex="0" data-project="${escapeHTML(group.project)}" style="cursor:pointer;"><span class="group-caret">${gCaret}</span> ${escapeHTML(group.project)} <span class="group-count">${gDone}/${gCount} 任务</span></div></td><td class="timecol"></td><td></td></tr>`;
       if(gCollapsed) return;
       group.entries.forEach(entry=>{
         const {segments, totalMin}=computeSchedule(entry);
@@ -1454,6 +1494,14 @@ function render(){
   `;
   flashId = null;
 
+  app.querySelectorAll('.group-label[data-project]').forEach(label=>{
+    const toggle=()=>window.__toggleGroup(label.dataset.project);
+    label.onclick=toggle;
+    label.onkeydown=(e)=>{
+      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); toggle(); }
+    };
+  });
+
   const sa=document.getElementById('scrollArea');
   if(sa){
     if(!didAutoScroll && showNow){
@@ -1486,8 +1534,8 @@ window.__toggleWorkHours = function(){
 window.__setZoom = function(px){ zoomPx=px; render(); };
 /* 折叠 / 展开某个任务的工序行 */
 window.__toggleGroup = function(proj){
-  if(collapsedGroups.has(proj)) collapsedGroups.delete(proj);
-  else collapsedGroups.add(proj);
+  const todayStr=localDateStr(new Date());
+  groupCollapseOverrides.set(proj, !groupIsCollapsed(proj, todayStr));
   render();
 };
 
@@ -1598,8 +1646,10 @@ window.__toggleTask = function(id){
 /* 点甘特色条 → 定位左侧对应任务：展开该任务、滚动到它、整行高亮闪一下 */
 window.__focusTask = function(id){
   collapsedTaskIds.delete(id);
-  const proj = (state.entries.find(e=>e.id===id)||{}).project || '（未分类项目）';
-  collapsedGroups.delete(proj);
+  const entry = state.entries.find(e=>e.id===id);
+  if(!entry) return;
+  if(!passesFilter(entry)){ filterMode='all'; searchQuery=''; }
+  groupCollapseOverrides.set(projectKey(entry), false);
   flashId = id;
   focusTaskId = id;
   render();
@@ -1728,7 +1778,7 @@ function freshStepFromTemplate(t){
 function blankStep(){
   return {id:uid(), label:'', color:nextColor(), minutes:10, included:true, status:'pending', actualStart:null, actualMinutes:null};
 }
-function defaultStepsForEntry(){ return state.templates.map(t=>freshStepFromTemplate(t)); }
+function defaultStepsForEntry(){ return state.templates.slice(0,3).map(t=>freshStepFromTemplate(t)); }
 
 window.__openNew = function(temporary){
   editingId=null;
@@ -1754,14 +1804,12 @@ window.__duplicateEntry = function(id){
 function passesFilter(entry){
   if(searchQuery){
     const q=searchQuery.toLowerCase();
-    if(!(((entry.project||'')+' '+(entry.name||'')).toLowerCase().includes(q))) return false;
+    if(!((projectKey(entry)+' '+(entry.name||'')).toLowerCase().includes(q))) return false;
   }
   if(filterMode==='all') return true;
   const incl=entry.steps.filter(x=>x.included!==false);
   if(filterMode==='today'){
-    const t=localDateStr(new Date());
-    if(localDateStr(entryStartDate(entry))===t) return true;
-    return incl.some(x=>x.actualStart && localDateStr(new Date(x.actualStart))===t);
+    return entryIsOnDate(entry, localDateStr(new Date()));
   }
   if(filterMode==='running') return incl.some(x=>x.status==='in_progress');
   if(filterMode==='open') return !taskInfo(entry).finished;
@@ -1871,7 +1919,7 @@ function stepRowHTML(s, idx){
     <td><input type="text" class="stepLabel" data-step-idx="${idx}" placeholder="工序名称" value="${escapeHTML(s.label)}"></td>
     <td><input type="number" min="1" class="stepMinutes" data-step-idx="${idx}" value="${s.minutes}"> 分</td>
     <td class="col-status">${s.status==='done'?'<span style="color:var(--green); font-size:11px;">已完成</span>':(s.status==='in_progress'?'<span style="color:var(--amber); font-size:11px;">进行中</span>':'')}</td>
-    <td class="reorder-cell"><button type="button" class="mv-btn" data-mv-up="${idx}" title="上移">↑</button><button type="button" class="mv-btn" data-mv-dn="${idx}" title="下移">↓</button></td>
+    <td class="reorder-cell"><button type="button" class="drag-handle" data-drag-idx="${idx}" aria-label="拖动调整工序顺序" title="拖动排序，也可用上下方向键">↕</button></td>
     <td><button type="button" class="del-row" data-del-idx="${idx}" title="删除此工序">×</button></td>
   </tr>`;
 }
@@ -1880,6 +1928,7 @@ function openModal(draft){
   const overlay=document.createElement('div');
   overlay.className='overlay'; overlay.id='modalOverlay';
   let workingSteps=draft.steps.map(s=>({...s}));
+  let activeStepDragCleanup=null;
   let collapsedCount=0;   // 折叠隐藏的前 N 道工序（工序较多时自动折叠，方便编辑新工序）
   let userExpanded=false; // 用户手动展开后，添加新工序时不再自动折叠
 
@@ -1936,7 +1985,7 @@ function openModal(draft){
       <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px; font-weight:600;">工序（点击标签快速添加）</label>
       <div class="quickadd" id="quickAddArea">${quickAddHTML()}</div>
       <table class="steps-table">
-        <thead><tr><th></th><th></th><th>工序名称</th><th>预计时长</th><th class="col-status">状态</th><th>调序</th><th></th></tr></thead>
+        <thead><tr><th></th><th></th><th>工序名称</th><th>预计时长</th><th class="col-status">状态</th><th>拖拽</th><th></th></tr></thead>
         <tbody id="stepsBody">${stepsTableHTML()}</tbody>
       </table>
       <div class="modal-actions">
@@ -2009,6 +2058,96 @@ function openModal(draft){
   document.getElementById('stepsBody').addEventListener('input', syncStepsFromDOM);
   document.getElementById('stepsBody').addEventListener('change', syncStepsFromDOM);
 
+  function moveStep(fromIndex, toIndex){
+    syncStepsFromDOM();
+    const minIndex=Math.min(collapsedCount, Math.max(0,workingSteps.length-1));
+    toIndex=Math.max(minIndex, Math.min(toIndex, workingSteps.length-1));
+    if(fromIndex===toIndex || !workingSteps[fromIndex]) return;
+    const moved=workingSteps.splice(fromIndex,1)[0];
+    workingSteps.splice(toIndex,0,moved);
+    rerenderStepsBody();
+    const handle=document.querySelector(`#stepsBody .drag-handle[data-drag-idx="${toIndex}"]`);
+    if(handle){ handle.scrollIntoView({block:'nearest'}); handle.focus(); }
+  }
+  function bindDragHandle(handle){
+    handle.onkeydown=(e)=>{
+      const fromIndex=parseInt(handle.dataset.dragIdx,10);
+      if(e.key==='ArrowUp' && fromIndex>collapsedCount){ e.preventDefault(); moveStep(fromIndex,fromIndex-1); }
+      else if(e.key==='ArrowDown' && fromIndex<workingSteps.length-1){ e.preventDefault(); moveStep(fromIndex,fromIndex+1); }
+    };
+    handle.onpointerdown=(e)=>{
+      if(e.isPrimary===false) return;
+      if(e.pointerType==='mouse' && e.button!==0) return;
+      if(activeStepDragCleanup) activeStepDragCleanup();
+      e.preventDefault();
+      handle.focus();
+      syncStepsFromDOM();
+      const body=document.getElementById('stepsBody');
+      const sourceIndex=parseInt(handle.dataset.dragIdx,10);
+      const sourceRow=handle.closest('tr[data-step-idx]');
+      const pointerId=e.pointerId;
+      const startX=e.clientX, startY=e.clientY;
+      let dragging=false;
+      let dropBoundary=sourceIndex;
+      let cleaned=false;
+
+      function clearDropMarks(){
+        body.querySelectorAll('.step-drop-before,.step-drop-after').forEach(row=>row.classList.remove('step-drop-before','step-drop-after'));
+      }
+      function cleanup(){
+        if(cleaned) return;
+        cleaned=true;
+        clearDropMarks();
+        sourceRow.classList.remove('step-dragging');
+        handle.setAttribute('aria-grabbed','false');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('blur', cleanup);
+        handle.removeEventListener('lostpointercapture', onLostCapture);
+        if(activeStepDragCleanup===cleanup) activeStepDragCleanup=null;
+        try{ if(handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId); }catch(_e){}
+      }
+      function onMove(ev){
+        if(ev.pointerId!==pointerId) return;
+        if(!dragging && Math.hypot(ev.clientX-startX,ev.clientY-startY)<5) return;
+        dragging=true;
+        ev.preventDefault();
+        sourceRow.classList.add('step-dragging');
+        handle.setAttribute('aria-grabbed','true');
+        const modal=overlay.querySelector('.modal');
+        const scroller=modal && modal.scrollHeight>modal.clientHeight+1 ? modal : overlay;
+        const scrollRect=scroller.getBoundingClientRect();
+        const edge=48;
+        if(ev.clientY<Math.max(0,scrollRect.top)+edge) scroller.scrollTop-=14;
+        else if(ev.clientY>Math.min(window.innerHeight,scrollRect.bottom)-edge) scroller.scrollTop+=14;
+        const hit=document.elementFromPoint(ev.clientX,ev.clientY);
+        const row=hit && hit.closest ? hit.closest('#stepsBody tr[data-step-idx]') : null;
+        if(!row || !body.contains(row)) return;
+        const targetIndex=parseInt(row.dataset.stepIdx,10);
+        const after=ev.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height/2;
+        dropBoundary=targetIndex+(after?1:0);
+        clearDropMarks();
+        row.classList.add(after?'step-drop-after':'step-drop-before');
+      }
+      function onUp(ev){
+        if(ev.pointerId!==pointerId) return;
+        const finalIndex=sourceIndex<dropBoundary ? dropBoundary-1 : dropBoundary;
+        cleanup();
+        if(dragging && document.body.contains(overlay)) moveStep(sourceIndex,finalIndex);
+      }
+      function onCancel(ev){ if(ev.pointerId===pointerId) cleanup(); }
+      function onLostCapture(ev){ if(ev.pointerId===pointerId) cleanup(); }
+      activeStepDragCleanup=cleanup;
+      window.addEventListener('pointermove', onMove, {passive:false});
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('blur', cleanup);
+      handle.addEventListener('lostpointercapture', onLostCapture);
+      try{ handle.setPointerCapture(pointerId); }catch(_e){}
+    };
+  }
+
   function bindStepRowEvents(){
     document.querySelectorAll('#stepsBody .del-row').forEach(btn=>{
       btn.onclick=()=>{
@@ -2021,6 +2160,7 @@ function openModal(draft){
     if(ex) ex.onclick=()=>{ syncStepsFromDOM(); userExpanded=true; collapsedCount=0; rerenderStepsBody(); };
     const co=document.getElementById('collapseSteps');
     if(co) co.onclick=()=>{ syncStepsFromDOM(); userExpanded=false; collapsedCount=autoCollapseCount(); rerenderStepsBody(); };
+    document.querySelectorAll('#stepsBody .drag-handle').forEach(bindDragHandle);
   }
   bindStepRowEvents();
 
