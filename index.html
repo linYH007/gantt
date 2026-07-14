@@ -1394,6 +1394,9 @@ function personBarHTML(){
     chips += `<button class="${activePerson===OWNER_UNASSIGNED?'active':''}" onclick="__setPerson('${OWNER_UNASSIGNED}')" title="尚未指定负责人的任务">${OWNER_UNASSIGNED}</button>`;
   }
   chips += `<button class="add" onclick="__addPerson()" title="添加一个人员">＋ 添加人员</button>`;
+  if(showUnassigned){
+    chips += `<button class="add" style="color:var(--amber); border-color:#f0c78a;" onclick="__assignUnassigned()" title="一键把所有未分配任务指派给某人">📥 指派未分配…</button>`;
+  }
   const hint = activePerson==='全部' ? '当前显示全部人员的任务与合计工时' : ('当前只看：'+escapeHTML(activePerson)+' 的任务与工时');
   return `<div class="personbar">
     <span class="pb-label">👤 人员</span>
@@ -1711,6 +1714,8 @@ function render(){
               ${quickBtn}
               <button class="mini-btn" onclick="__toggleTask('${entry.id}')">▾ 折叠工序</button>
               <button class="mini-btn" onclick="__editEntry('${entry.id}')">编辑任务 / 工序</button>
+              <button class="mini-btn" onclick="__reassignEntry('${entry.id}')" title="把负责人换成另一人">👤 改派给…</button>
+              <button class="mini-btn" onclick="__copyEntryTo('${entry.id}')" title="复制一份并指派负责人">⧉ 复制给…</button>
               <button class="mini-btn" onclick="__duplicateEntry('${entry.id}')">复制到当前</button>
               <button class="mini-btn danger" onclick="__deleteEntry('${entry.id}')">删除</button>
             </div>
@@ -1981,14 +1986,23 @@ window.__openProjectList = function(){
       const info = taskInfo(en);
       const status = info.finished ? `<span style="color:var(--green)">✓ ${info.finishTime?fmtHM(info.finishTime)+' 完成':'已完成'}</span>`
         : (info.anyRunning ? '<span style="color:var(--amber)">● 进行中</span>' : `<span style="color:#9aa5b1">待开始 · 计划 ${fmtHM(entryStartDate(en))}</span>`);
+      const ow=ownerKey(en);
+      const ownerTag = ow===OWNER_UNASSIGNED
+        ? `<span style="font-size:10.5px; color:#8a97a8; background:#f1f3f6; border:1px solid #e4e8ee; padding:1px 7px; border-radius:9px;">未分配</span>`
+        : `<span style="font-size:10.5px; color:#33495f; background:#e6edf6; border:1px solid #d2ddeb; padding:1px 7px; border-radius:9px;">👤 ${escapeHTML(ow)}</span>`;
       return `<div class="pl-task" onclick="__closeProjectList(); __focusTask('${en.id}')">
-        <span class="pl-name">${escapeHTML(en.name)}</span>
+        <span class="pl-name">${escapeHTML(en.name)} ${ownerTag}</span>
         <span class="pl-status">${status}</span>
         <span class="pl-pct">${info.pct}%</span>
       </div>`;
     }).join('');
     const gDone = g.entries.filter(e=>taskInfo(e).finished).length;
-    return `<div class="pl-group"><div class="pl-gtitle">${escapeHTML(g.project)} <span class="group-count">${gDone}/${g.entries.length}</span></div>${rows}</div>`;
+    const pk=escapeAttr(g.project);
+    const projActions = `<span style="margin-left:auto; display:inline-flex; gap:6px;">
+        <button class="mini-btn" onclick="event.stopPropagation(); __reassignProject('${pk}')" title="整个项目改派给某人">👤 改派</button>
+        <button class="mini-btn" onclick="event.stopPropagation(); __copyProject('${pk}')" title="整个项目复制给某人">⧉ 复制</button>
+      </span>`;
+    return `<div class="pl-group"><div class="pl-gtitle" style="display:flex; align-items:center; gap:8px;">${escapeHTML(g.project)} <span class="group-count">${gDone}/${g.entries.length}</span>${projActions}</div>${rows}</div>`;
   }).join('') || '<div style="color:#9aa5b1; padding:20px;">还没有任务</div>';
 
   const overlay=document.createElement('div');
@@ -2199,6 +2213,113 @@ window.__duplicateEntry = function(id){
   copy.steps.forEach(s=>{ s.status='pending'; s.actualStart=null; s.actualMinutes=null; s.id=uid(); });
   openModal(copy);
 };
+
+/* ============ 改派 / 复制给负责人 ============ */
+/* 通用人员选择弹窗，复用于：改派、复制、批量指派 */
+function pickPerson(title, onPick, opts){
+  opts=opts||{};
+  const people=allPeople();
+  const overlay=document.createElement('div');
+  overlay.className='overlay'; overlay.id='pickPersonOverlay';
+  const personBtns = people.length
+    ? people.map(n=>`<button type="button" class="btn" data-pick="${escapeAttr(n)}" style="justify-content:flex-start; text-align:left;">👤 ${escapeHTML(n)}</button>`).join('')
+    : '<div style="color:#9aa5b1; padding:6px 2px; font-size:12.5px;">还没有人员，点下方新建一个。</div>';
+  const unassignBtn = opts.allowUnassigned ? `<button type="button" class="btn" data-pick="__UNASSIGN__" style="justify-content:flex-start; text-align:left; color:var(--text-dim);">↩ 设为未分配</button>` : '';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:440px;">
+      <h2>${escapeHTML(title)}</h2>
+      ${opts.sub?`<div class="sub">${escapeHTML(opts.sub)}</div>`:''}
+      <div style="display:flex; flex-direction:column; gap:8px; margin:12px 0 4px; max-height:52vh; overflow-y:auto;">
+        ${personBtns}
+        ${unassignBtn}
+        <button type="button" class="btn" data-pick="__NEW__" style="justify-content:flex-start; text-align:left; color:var(--blue); border-style:dashed;">＋ 新建人员并选择</button>
+      </div>
+      <div class="modal-actions"><button class="btn" id="ppCancel">取消</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close=()=>overlay.remove();
+  overlay.addEventListener('click',(e)=>{ if(e.target===overlay) close(); });
+  overlay.querySelector('#ppCancel').onclick=close;
+  overlay.querySelectorAll('[data-pick]').forEach(b=>{
+    b.onclick=()=>{
+      let val=b.getAttribute('data-pick');
+      if(val==='__NEW__'){
+        const nm=(prompt('新建人员姓名：')||'').trim();
+        if(!nm) return;
+        if(nm==='全部'||nm===OWNER_UNASSIGNED){ showToast('该名称为保留字，请换一个。'); return; }
+        val=nm;
+      } else if(val==='__UNASSIGN__'){ val=''; }
+      close();
+      onPick(val);
+    };
+  });
+}
+/* 生成一份“重置状态”的任务副本（新 id、清空实际时间、从现在排起） */
+function freshEntryCopy(entry, owner){
+  const copy=JSON.parse(JSON.stringify(entry));
+  copy.id=uid();
+  copy.owner=owner||'';
+  copy.startISO=new Date().toISOString();
+  (copy.steps||[]).forEach(s=>{ s.status='pending'; s.actualStart=null; s.actualMinutes=null; s.id=uid(); });
+  return copy;
+}
+/* 改派单条任务（移动负责人，原任务直接过去） */
+window.__reassignEntry=function(id){
+  const entry=state.entries.find(e=>e.id===id); if(!entry) return;
+  pickPerson('改派「'+entry.name+'」给：', async (name)=>{
+    entry.owner=name; if(name) rememberPerson(name);
+    const saved=await saveBoard();
+    showToast(saved?('已改派给：'+(name||'未分配')+'。'):'已改派，待手动同步。');
+  }, {allowUnassigned:true, sub:'把这条任务的负责人换成另一人，原任务直接归到对方名下。'});
+};
+/* 复制单条任务给某人（原任务保留） */
+window.__copyEntryTo=function(id){
+  const entry=state.entries.find(e=>e.id===id); if(!entry) return;
+  pickPerson('复制「'+entry.name+'」给：', async (name)=>{
+    const copy=freshEntryCopy(entry, name);
+    state.entries.push(copy);
+    if(name) rememberPerson(name);
+    ensureCollapseOverrideDate(); taskCollapseOverrides.set(copy.id,false); flashId=copy.id;
+    const saved=await saveBoard();
+    showToast(saved?('已复制一份给：'+(name||'未分配')+'（原任务保留）。'):'已复制，待手动同步。');
+  }, {allowUnassigned:true, sub:'复制一份新任务并指派负责人，原任务保留不动。'});
+};
+/* 批量把所有“未分配”的任务指派给同一个人 */
+window.__assignUnassigned=function(){
+  const targets=state.entries.filter(e=>ownerKey(e)===OWNER_UNASSIGNED);
+  if(!targets.length){ showToast('当前没有未分配的任务。'); return; }
+  pickPerson('把 '+targets.length+' 个未分配任务指派给：', async (name)=>{
+    if(!name){ showToast('请选择或新建一个人员。'); return; }
+    targets.forEach(e=>{ e.owner=name; });
+    rememberPerson(name);
+    if(activePerson===OWNER_UNASSIGNED) setActivePerson(name);
+    const saved=await saveBoard();
+    showToast(saved?('已把 '+targets.length+' 个任务指派给：'+name+'。'):'已指派，待手动同步。');
+  }, {allowUnassigned:false, sub:'一次把当前所有未分配任务交给同一个人。'});
+};
+/* 整个项目改派给某人（该项目下所有任务一起） */
+window.__reassignProject=function(projKey){
+  const targets=state.entries.filter(e=>projectKey(e)===projKey);
+  if(!targets.length) return;
+  __closeProjectList();
+  pickPerson('把项目「'+projKey+'」（'+targets.length+' 个任务）改派给：', async (name)=>{
+    targets.forEach(e=>{ e.owner=name; }); if(name) rememberPerson(name);
+    const saved=await saveBoard();
+    showToast(saved?('项目「'+projKey+'」已改派给：'+(name||'未分配')+'。'):'已改派，待手动同步。');
+  }, {allowUnassigned:true, sub:'该项目下全部任务一起归到同一个人名下。'});
+};
+/* 整个项目复制给某人（原项目保留） */
+window.__copyProject=function(projKey){
+  const targets=state.entries.filter(e=>projectKey(e)===projKey);
+  if(!targets.length) return;
+  __closeProjectList();
+  pickPerson('把项目「'+projKey+'」（'+targets.length+' 个任务）复制给：', async (name)=>{
+    targets.forEach(e=>{ state.entries.push(freshEntryCopy(e, name)); }); if(name) rememberPerson(name);
+    const saved=await saveBoard();
+    showToast(saved?('已复制项目「'+projKey+'」'+targets.length+' 个任务给：'+(name||'未分配')+'。'):'已复制，待手动同步。');
+  }, {allowUnassigned:true, sub:'复制该项目下全部任务并指派负责人，原项目保留不动。'});
+};
+
 function passesFilter(entry){
   if(!passesPerson(entry)) return false;   // 顶部人员切换：只看当前选中的人
   if(searchQuery){
