@@ -95,6 +95,8 @@
   .task-name-toggle{font-family:inherit; color:inherit; background:transparent; border:none; padding:0; text-align:left; cursor:pointer;}
   .task-name-toggle:focus-visible{outline:2px solid var(--blue); outline-offset:2px; border-radius:3px;}
   .temp-badge{font-size:10px; color:#fff; background:var(--amber); padding:1px 7px; border-radius:9px; font-weight:600;}
+  .owner-badge{font-size:10px; color:#33495f; background:#e6edf6; border:1px solid #d2ddeb; padding:1px 8px; border-radius:9px; font-weight:600; white-space:nowrap;}
+  .owner-badge.unassigned{color:#8a97a8; background:#f1f3f6; border-color:#e4e8ee;}
   .done-badge{font-size:10.5px; color:#fff; background:var(--green); padding:1px 8px; border-radius:9px; font-weight:600;}
   .task-meta{font-size:11px; color:var(--text-dim); width:100%;}
   .task-actions{display:flex; gap:8px; margin-top:5px; flex-wrap:wrap;}
@@ -288,6 +290,16 @@
   .pl-status{font-size:11.5px;}
   .pl-pct{font-size:11px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; width:34px; text-align:right;}
   /* 筛选条 */
+  /* ===== 人员切换栏 ===== */
+  .personbar{display:flex; align-items:center; gap:8px; padding:10px 20px 0; flex-wrap:wrap;}
+  .personbar .pb-label{font-size:12px; color:var(--text-dim); font-weight:600; display:inline-flex; align-items:center; gap:5px;}
+  .personchips{display:flex; gap:6px; flex-wrap:wrap;}
+  .personchips button{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:5px 14px; font-size:12.5px; color:var(--text); cursor:pointer; font-weight:500; transition:.12s;}
+  .personchips button:hover{border-color:#bcd7f5; background:#f6faff;}
+  .personchips button.active{background:var(--blue); color:#fff; border-color:var(--blue); font-weight:600;}
+  .personchips button.all.active{background:#2c3e55; border-color:#2c3e55;}
+  .personchips button.add{color:var(--blue); border-style:dashed;}
+  .person-badge{display:inline-flex; align-items:center; gap:3px; font-size:10.5px; color:#fff; background:#8a97a8; padding:1px 8px; border-radius:9px; font-weight:600; margin-left:2px;}
   .filterbar{display:flex; align-items:center; gap:10px; padding:8px 20px 0; flex-wrap:wrap;}
   .filterchips{display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel);}
   .filterchips button{background:transparent; border:none; padding:6px 13px; font-size:12.5px; color:var(--text-dim); cursor:pointer;}
@@ -402,7 +414,9 @@ const STEP_TEMPLATES_DEFAULT = [
   {label:'成品拍照', color:'#7c8ca6', minutes:5},
 ];
 
-let state = { templates: STEP_TEMPLATES_DEFAULT.map(s=>({...s})), entries: [], title: '' };
+let state = { templates: STEP_TEMPLATES_DEFAULT.map(s=>({...s})), entries: [], title: '', people: [] };
+let activePerson = '全部';   // 顶部人员切换：'全部' 或某个负责人名字
+try{ const _ap=localStorage.getItem('gantt:activePerson'); if(_ap) activePerson=_ap; }catch(_e){}
 let zoomPx = 60;
 /* 任务折叠的手动覆盖：id => true(折叠) / false(展开)。无覆盖时按当日实际参与与完成状态自动判断。 */
 let taskCollapseOverrides = new Map();
@@ -519,6 +533,8 @@ function normalizeEntries(entries){
     if(!en.id || seenEntryIds.has(en.id)) en.id = uid();
     seenEntryIds.add(en.id);
     if(en.project===undefined) en.project='';
+    if(en.owner===undefined || en.owner===null) en.owner='';
+    else en.owner=String(en.owner).trim();
     const seenStepIds=new Set();
     (en.steps||[]).forEach((s,i)=>{
       if(!s.id || seenStepIds.has(s.id)) s.id = en.id + '_s' + i + '_' + uid().slice(-4);
@@ -611,6 +627,7 @@ function applyRemote(row){
   });
   if(typeof data.title==='string') state.title = data.title;
   if(Array.isArray(data.meals)) state.meals = data.meals;
+  if(Array.isArray(data.people)) state.people = data.people.map(n=>String(n||'').trim()).filter(Boolean);
   lastRemoteStamp = canonicalStamp(row.updated_at);
 }
 
@@ -906,6 +923,38 @@ function taskSortKey(entry){
 }
 
 function projectKey(entry){ return (entry.project||'').trim()||'（未分类项目）'; }
+
+/* ---------- 负责人 / 多人 ---------- */
+const OWNER_UNASSIGNED = '未分配';
+function ownerKey(entry){ return (entry && entry.owner!==undefined && String(entry.owner).trim()) ? String(entry.owner).trim() : OWNER_UNASSIGNED; }
+/* 任务上的负责人徽章：只在“全部”视图显示，方便区分谁的活；看单人时不重复显示 */
+function ownerBadgeHTML(entry){
+  if(activePerson!=='全部') return '';
+  const k=ownerKey(entry);
+  if(k===OWNER_UNASSIGNED) return `<span class="owner-badge unassigned" title="未指定负责人">未分配</span>`;
+  return `<span class="owner-badge" title="负责人：${escapeAttr(k)}">👤 ${escapeHTML(k)}</span>`;
+}
+/* 汇总所有已知人员：手动添加的 state.people ∪ 任务上出现过的负责人，保持稳定顺序 */
+function allPeople(){
+  const seen=new Set(); const out=[];
+  (state.people||[]).forEach(n=>{ const k=String(n||'').trim(); if(k && !seen.has(k)){ seen.add(k); out.push(k); } });
+  (state.entries||[]).forEach(en=>{ const k=ownerKey(en); if(k!==OWNER_UNASSIGNED && !seen.has(k)){ seen.add(k); out.push(k); } });
+  return out;
+}
+/* 当前是否有任务未分配负责人（决定是否显示“未分配”标签） */
+function hasUnassigned(){ return (state.entries||[]).some(en=>ownerKey(en)===OWNER_UNASSIGNED); }
+/* 记住一个人员名字到 state.people（不重复） */
+function rememberPerson(name){
+  const k=String(name||'').trim(); if(!k) return;
+  if(!Array.isArray(state.people)) state.people=[];
+  if(!state.people.some(n=>String(n).trim()===k)) state.people.push(k);
+}
+function setActivePerson(p){
+  activePerson = p || '全部';
+  try{ localStorage.setItem('gantt:activePerson', activePerson); }catch(_e){}
+}
+/* 当前人员过滤：activePerson==='全部' 时全部通过，否则只保留该负责人的任务 */
+function passesPerson(entry){ return activePerson==='全部' || ownerKey(entry)===activePerson; }
 function bjDateBounds(dateStr){
   const p=dateStr.split('-');
   const dayStart=bjMake(+p[0],+p[1],+p[2],0,0).getTime();
@@ -1122,6 +1171,7 @@ function computeStats(dateStr){
     return perProject[key];
   }
   state.entries.forEach(entry=>{
+    if(!passesPerson(entry)) return;   // 按顶部选中的人分开统计，互不干扰
     const included=entry.steps.filter(s=>s.included!==false);
     const schedule=computeSchedule(entry);
     let hasPlannedToday=false;
@@ -1204,6 +1254,7 @@ function buildDailyReport(dateStr){
   const ps=dateStr.split('-'); const d = bjMake(+ps[0],+ps[1],+ps[2],0,0);
   const finishedToday=[], ongoing=[], notStarted=[];
   state.entries.forEach(entry=>{
+    if(!passesPerson(entry)) return;   // 日报跟随当前选中的人
     const info = taskInfo(entry);
     if(info.stepsTotal===0) return;
     if(info.finished){
@@ -1218,7 +1269,7 @@ function buildDailyReport(dateStr){
   });
 
   const lines=[];
-  lines.push('📋 生产日报 · '+fmtDay(d));
+  lines.push('📋 生产日报 · '+fmtDay(d)+(activePerson!=='全部'?'（'+activePerson+'）':''));
   lines.push('────────────');
   lines.push('⏱ 当日实际投入：'+fmtMin(s.actualMin)+(s.mealMinToday>0?'（含用餐 '+fmtMin(s.mealMinToday)+'）':'')+(s.inProgressSteps?'（含 '+s.inProgressSteps+' 道进行中）':''));
   lines.push('✅ 当日完成任务 '+finishedToday.length+' 个；🔄 在办 '+ongoing.length+' 个；⏳ 待开始 '+notStarted.length+' 个');
@@ -1260,6 +1311,7 @@ function buildWeeklyReport(){
 
   let weekActualMin=0;
   state.entries.forEach(entry=>{
+    if(!passesPerson(entry)) return;   // 周报跟随当前选中的人
     entry.steps.filter(s=>s.included!==false).forEach(s=>{
       if(s.actualStart){
         const st=new Date(s.actualStart);
@@ -1272,6 +1324,7 @@ function buildWeeklyReport(){
 
   const finished=[], ongoing=[], notStarted=[];
   state.entries.forEach(entry=>{
+    if(!passesPerson(entry)) return;   // 周报跟随当前选中的人
     const info=taskInfo(entry);
     if(info.stepsTotal===0) return;
     if(info.finished){
@@ -1288,7 +1341,7 @@ function buildWeeklyReport(){
   const mp=bjParts(monday), sp2=bjParts(sunday);
   const rangeText = p(mp.mo)+'/'+p(mp.da)+'–'+p(sp2.mo)+'/'+p(sp2.da);
   const lines=[];
-  lines.push('📊 生产周报 · '+rangeText);
+  lines.push('📊 生产周报 · '+rangeText+(activePerson!=='全部'?'（'+activePerson+'）':''));
   lines.push('────────────');
   lines.push('⏱ 本周实际投入：'+fmtMin(weekActualMin));
   lines.push('✅ 完成任务 '+finished.length+' 个；🔄 进行中 '+ongoing.length+' 个；⏳ 待开始 '+notStarted.length+' 个');
@@ -1327,6 +1380,53 @@ window.__copyReport = ()=>copyText(buildDailyReport(statsDate), '日报已复制
 window.__copyWeekly = ()=>copyText(buildWeeklyReport(), '周报已复制，可直接粘贴发送。');
 window.__statsDateChange = function(v){ statsDate = v || localDateStr(new Date()); render(); };
 
+/* ---------- 顶部人员切换栏 ---------- */
+function personBarHTML(){
+  const people=allPeople();
+  const showUnassigned=hasUnassigned();
+  // activePerson 指向的人若已不存在（改名/删空），回退到全部
+  if(activePerson!=='全部' && activePerson!==OWNER_UNASSIGNED && !people.includes(activePerson)) setActivePerson('全部');
+  let chips = `<button class="all ${activePerson==='全部'?'active':''}" onclick="__setPerson('全部')">👥 全部</button>`;
+  people.forEach(n=>{
+    chips += `<button class="${activePerson===n?'active':''}" onclick="__setPerson('${escapeAttr(n)}')" ondblclick="__renamePerson('${escapeAttr(n)}')" title="单击切换 · 双击改名">${escapeHTML(n)}</button>`;
+  });
+  if(showUnassigned){
+    chips += `<button class="${activePerson===OWNER_UNASSIGNED?'active':''}" onclick="__setPerson('${OWNER_UNASSIGNED}')" title="尚未指定负责人的任务">${OWNER_UNASSIGNED}</button>`;
+  }
+  chips += `<button class="add" onclick="__addPerson()" title="添加一个人员">＋ 添加人员</button>`;
+  const hint = activePerson==='全部' ? '当前显示全部人员的任务与合计工时' : ('当前只看：'+escapeHTML(activePerson)+' 的任务与工时');
+  return `<div class="personbar">
+    <span class="pb-label">👤 人员</span>
+    <div class="personchips">${chips}</div>
+    <span class="kbd-hint" style="margin-left:6px;">${hint}</span>
+  </div>`;
+}
+/* 属性安全转义（用于内联 onclick 里的名字） */
+function escapeAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+window.__setPerson=function(p){ setActivePerson(p); render(); };
+window.__addPerson=function(){
+  const name=(prompt('添加人员姓名（例如：张三）：')||'').trim();
+  if(!name){ return; }
+  if(name==='全部'||name===OWNER_UNASSIGNED){ showToast('该名称为保留字，请换一个。'); return; }
+  rememberPerson(name);
+  setActivePerson(name);
+  saveBoard();
+  showToast('已添加人员：'+name+'。新建任务时可指定其为负责人。');
+};
+window.__renamePerson=function(oldName){
+  const name=(prompt('把「'+oldName+'」改成：', oldName)||'').trim();
+  if(!name || name===oldName) return;
+  if(name==='全部'||name===OWNER_UNASSIGNED){ showToast('该名称为保留字，请换一个。'); return; }
+  // 同步更新名单与所有任务的负责人
+  if(Array.isArray(state.people)) state.people=state.people.map(n=>String(n).trim()===oldName?name:n);
+  rememberPerson(name);
+  (state.entries||[]).forEach(en=>{ if(ownerKey(en)===oldName) en.owner=name; });
+  if(activePerson===oldName) setActivePerson(name);
+  saveBoard();
+  showToast('已改名为：'+name+'（相关任务负责人已同步更新）。');
+};
+
 function statsPanelHTML(){
   const s=computeStats(statsDate);
   const devCls = s.doneSteps===0?'':(s.deviation>15?'bad':(s.deviation<-5?'good':''));
@@ -1342,7 +1442,7 @@ function statsPanelHTML(){
   return `
   <div class="stats-panel">
     <div class="stats-head">
-      <h3 style="cursor:pointer;" onclick="__toggleStats()" title="点击${statsCollapsed?'展开':'收起'}统计">${statsCollapsed?'▸':'▾'} 📊 工时统计</h3>
+      <h3 style="cursor:pointer;" onclick="__toggleStats()" title="点击${statsCollapsed?'展开':'收起'}统计">${statsCollapsed?'▸':'▾'} 📊 工时统计${activePerson!=='全部'?' · <span style="color:var(--blue);">'+escapeHTML(activePerson)+'</span>':' · <span style="color:var(--text-dim);">全部人员</span>'}</h3>
       <input type="date" value="${statsDate}" onchange="__statsDateChange(this.value)">
       <span class="spacer"></span>
       <button class="btn primary" onclick="__copyReport()">📋 复制日报</button>
@@ -1579,6 +1679,7 @@ function render(){
               <div class="cc-line">
                 <button type="button" class="task-caret" onclick="__toggleTask('${entry.id}')" aria-expanded="false" title="展开工序">▸</button>
                 <button type="button" class="task-name task-name-toggle" style="flex:1;" onclick="__toggleTask('${entry.id}')" aria-expanded="false">${escapeHTML(entry.name)}</button>
+                ${ownerBadgeHTML(entry)}
                 ${entry.temporary?'<span class="temp-badge">临时</span>':''}
                 ${doneMark}
                 <span class="cc-pct">${pct}%</span>
@@ -1601,6 +1702,7 @@ function render(){
             <div class="task-head">
               <button type="button" class="task-caret" onclick="__toggleTask('${entry.id}')" aria-expanded="true" title="折叠工序">▾</button>
               <button type="button" class="task-name task-name-toggle" onclick="__toggleTask('${entry.id}')" aria-expanded="true" title="点击折叠工序">${escapeHTML(entry.name)}</button>
+              ${ownerBadgeHTML(entry)}
               ${entry.temporary?'<span class="temp-badge">临时</span>':''}
               ${headLine}
             </div>
@@ -1745,6 +1847,7 @@ function render(){
       <button class="btn tiny" onclick="__exportBackup()">💾 备份</button>
       <button class="btn tiny" onclick="__importBackup()">📥 导入</button>
     </div>
+    ${personBarHTML()}
     ${statsPanelHTML()}
     <div class="board-wrap">
       <div class="board-scroll" id="scrollArea">
@@ -2097,9 +2200,10 @@ window.__duplicateEntry = function(id){
   openModal(copy);
 };
 function passesFilter(entry){
+  if(!passesPerson(entry)) return false;   // 顶部人员切换：只看当前选中的人
   if(searchQuery){
     const q=searchQuery.toLowerCase();
-    if(!((projectKey(entry)+' '+(entry.name||'')).toLowerCase().includes(q))) return false;
+    if(!((projectKey(entry)+' '+(entry.name||'')+' '+ownerKey(entry)).toLowerCase().includes(q))) return false;
   }
   if(filterMode==='all') return true;
   const incl=entry.steps.filter(x=>x.included!==false);
@@ -2114,7 +2218,7 @@ window.__setFilter=function(m){ filterMode=m; render(); };
 
 /* 💾 数据备份与恢复（JSON 文件，含任务、模板、标题） */
 window.__exportBackup=function(){
-  const payload={ exportedAt:new Date().toISOString(), title:state.title||'', templates:state.templates, meals:state.meals||[], entries:state.entries };
+  const payload={ exportedAt:new Date().toISOString(), title:state.title||'', templates:state.templates, meals:state.meals||[], people:state.people||[], entries:state.entries };
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -2145,6 +2249,7 @@ window.__importBackup=function(){
           groupCollapseOverrides.clear();
           if(Array.isArray(data.templates)) state.templates=data.templates;
           if(Array.isArray(data.meals)) state.meals=data.meals;
+          if(Array.isArray(data.people)) state.people=data.people.map(n=>String(n||'').trim()).filter(Boolean);
           if(typeof data.title==='string') state.title=data.title;
           const saved=await saveBoard();
           showUndoToast(saved?'备份已导入并同步云端。':'备份已导入到本页，待手动同步。',importUndo);
@@ -2253,6 +2358,11 @@ function openModal(draft){
   /* 项目名候选（已有项目一键选）+ 新建时默认带上上次用过的项目 */
   const projNames=[...new Set(state.entries.map(e=>(e.project||'').trim()).filter(Boolean))];
   const projOptions=projNames.map(n=>`<option value="${escapeHTML(n)}"></option>`).join('');
+  /* 负责人候选：已知人员列表；新建任务时若顶部正看某个人，默认带上该人，省去每次选 */
+  if(!editingId && (draft.owner===undefined || draft.owner==='') && activePerson!=='全部' && activePerson!==OWNER_UNASSIGNED){
+    draft.owner=activePerson;
+  }
+  const ownerOptions=allPeople().map(n=>`<option value="${escapeHTML(n)}"></option>`).join('');
   if(!editingId && !draft.project){
     try{ draft.project=localStorage.getItem('gantt:lastProject')||''; }catch(_e){}
   }
@@ -2286,6 +2396,10 @@ function openModal(draft){
       <div class="row2">
         <div class="field"><label>所属项目</label><input type="text" id="fProject" list="projList" placeholder="例如：B客户镜面" value="${escapeHTML(draft.project||'')}"><datalist id="projList">${projOptions}</datalist></div>
         <div class="field"><label>任务名称</label><input type="text" id="fName" placeholder="例如：二次贴膜 * 6片" value="${escapeHTML(draft.name)}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>负责人</label><input type="text" id="fOwner" list="ownerList" placeholder="例如：张三（可留空＝未分配）" value="${escapeHTML(draft.owner||'')}"><datalist id="ownerList">${ownerOptions}</datalist></div>
+        <div class="field"></div>
       </div>
       <div class="row2">
         <div class="field"><label>开始日期</label><input type="date" id="fDate" value="${dateVal}"></div>
@@ -2515,6 +2629,9 @@ function openModal(draft){
     try{ if(project) localStorage.setItem('gantt:lastProject', project); }catch(_e){}
     const name=document.getElementById('fName').value.trim();
     if(!name){ showToast('请输入任务名称。'); return; }
+    const ownerEl=document.getElementById('fOwner');
+    const owner=ownerEl?ownerEl.value.trim():'';
+    if(owner){ rememberPerson(owner); }   // 输入的新名字自动加入人员名单
     const date=document.getElementById('fDate').value;
     const time=document.getElementById('fTime').value||'00:00';
     const startISO=parseBJ(`${date}T${time}`).toISOString();
@@ -2530,13 +2647,13 @@ function openModal(draft){
 
     if(editingId){
       const entry=state.entries.find(e=>e.id===editingId);
-      Object.assign(entry, {project, name, startISO, temporary, steps});
+      Object.assign(entry, {project, name, owner, startISO, temporary, steps});
       ensureCollapseOverrideDate();
       taskCollapseOverrides.set(editingId,false); // 编辑后自动展开，方便查看改动
       flashId = editingId;
     } else {
       const newId = uid();
-      state.entries.push({id:newId, project, name, startISO, temporary, steps});
+      state.entries.push({id:newId, project, name, owner, startISO, temporary, steps});
       ensureCollapseOverrideDate();
       taskCollapseOverrides.set(newId,false);
       flashId = newId;
